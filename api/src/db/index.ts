@@ -20,3 +20,5 @@ pool.connect((err, client, release) => {
 });
 
 export const db = drizzle(pool);
+
+
