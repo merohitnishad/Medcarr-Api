@@ -12,7 +12,7 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Optional: for initial schema
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Optional: for initial schema
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
@@ -39,7 +39,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./api/logs:/app/logs # Optional: for log persistence
+      # - ./api/logs:/app/logs # Optional: for log persistence
     restart: unless-stopped
 
 volumes:
