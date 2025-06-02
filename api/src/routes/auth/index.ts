@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
   createUserSchema,
   loginSchema,
-  usersTable,
+  users,
 } from '../../db/schemas/usersSchema.js';
 import { validateData } from '../../middlewares/validationMiddleware.js';
 import bcrypt from 'bcryptjs';
@@ -18,52 +18,76 @@ const generateUserToken = (user: any) => {
   });
 };
 
-router.post('/register', validateData(createUserSchema), async (req, res) => {
+router.post('/create-user', validateData(createUserSchema), async (req, res) => {
   try {
-    const data = req.cleanBody;
-    console.log('data', data)
-    data.password = await bcrypt.hash(data.password, 10);
+    const { cognitoId, name, email, role } = req.cleanBody;
 
-    const [user] = await db.insert(usersTable).values(data).returning();
-
-    // @ts-ignore
-    delete user.password;
-    const token = generateUserToken(user);
-
-    res.status(201).json({ user, token });
-  } catch (e) {
-    console.log(e);
-    res.status(500).send('Something went wrong');
-  }
-});
-
-router.post('/login', validateData(loginSchema), async (req, res) => {
-  try {
-    const { email, password } = req.cleanBody;
-
-    const [user] = await db
+    // Check if user already exists
+    const existingUser = await db
       .select()
-      .from(usersTable)
-      .where(eq(usersTable.email, email));
-    if (!user) {
-      res.status(401).json({ error: 'Authentication failed' });
+      .from(users)
+      .where(eq(users.cognitoId, cognitoId))
+      .limit(1);
+
+    if (existingUser.length > 0) {
+      res.status(409).json({ 
+        error: 'User already exists',
+        user: existingUser[0]
+      });
       return;
     }
 
-    const matched = await bcrypt.compare(password, user.password);
-    if (!matched) {
-      res.status(401).json({ error: 'Authentication failed' });
-      return;
-    }
+    // Create new user
+    const newUser = await db
+    .insert(users)
+    .values({
+      cognitoId,
+      name,
+      email,
+      role,
+    })
+    .returning();
+    
+    res.status(201).json({ 
+      message: 'User created successfully',
+      user: newUser[0]
+    });
+    return;
 
-    // create a jwt token
-    const token = generateUserToken(user);
-    // @ts-ignore
-    delete user.password;
-    res.status(200).json({ token, user });
-  } catch (e) {
-    res.status(500).send('Something went wrong');
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+    return;
   }
 });
+
+// router.post('/login', validateData(loginSchema), async (req, res) => {
+//   try {
+//     const { email, password } = req.cleanBody;
+
+//     const [user] = await db
+//       .select()
+//       .from(usersTable)
+//       .where(eq(usersTable.email, email));
+//     if (!user) {
+//       res.status(401).json({ error: 'Authentication failed' });
+//       return;
+//     }
+
+//     const matched = await bcrypt.compare(password, user.password);
+//     if (!matched) {
+//       res.status(401).json({ error: 'Authentication failed' });
+//       return;
+//     }
+
+//     // create a jwt token
+//     const token = generateUserToken(user);
+//     // @ts-ignore
+//     delete user.password;
+//     res.status(200).json({ token, user });
+//   } catch (e) {
+//     res.status(500).send('Something went wrong');
+//   }
+// });
 
 export default router;
