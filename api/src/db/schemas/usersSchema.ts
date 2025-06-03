@@ -17,6 +17,7 @@ export const users = pgTable('users', {
 
 export const createUserSchema = createInsertSchema(users).omit({
   id: true,
+  cognitoId: true,
 });
 
 export const loginSchema = createInsertSchema(users).pick({
