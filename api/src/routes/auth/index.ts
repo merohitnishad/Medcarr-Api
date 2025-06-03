@@ -1,65 +1,95 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   createUserSchema,
   loginSchema,
   users,
-} from '../../db/schemas/usersSchema.js';
-import { validateData } from '../../middlewares/validationMiddleware.js';
-import bcrypt from 'bcryptjs';
-import { db } from '../../db/index.js';
-import { eq } from 'drizzle-orm';
-import jwt from 'jsonwebtoken';
+} from "../../db/schemas/usersSchema.js";
+import { validateData } from "../../middlewares/validationMiddleware.js";
+import bcrypt from "bcryptjs";
+import { db } from "../../db/index.js";
+import { eq } from "drizzle-orm";
+import jwt from "jsonwebtoken";
+import {
+  CognitoIdentityProviderClient,
+  AdminUpdateUserAttributesCommand,
+} from "@aws-sdk/client-cognito-identity-provider";
 
 const router = Router();
 
 const generateUserToken = (user: any) => {
-  return jwt.sign({ userId: user.id, role: user.role }, 'your-secret', {
-    expiresIn: '30d',
+  return jwt.sign({ userId: user.id, role: user.role }, "your-secret", {
+    expiresIn: "30d",
   });
 };
 
-router.post('/create-user', validateData(createUserSchema), async (req, res) => {
-  try {
-    const { cognitoId, name, email, role } = req.cleanBody;
+const cognitoClient = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
-    // Check if user already exists
-    const existingUser = await db
-      .select()
-      .from(users)
-      .where(eq(users.cognitoId, cognitoId))
-      .limit(1);
+router.post(
+  "/create-user",
+  validateData(createUserSchema),
+  async (req, res) => {
+    try {
+      const { cognitoId, name, email, role } = req.cleanBody;
 
-    if (existingUser.length > 0) {
-      res.status(409).json({ 
-        error: 'User already exists',
-        user: existingUser[0]
+      // Check if user already exists
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.cognitoId, cognitoId))
+        .limit(1);
+
+      if (existingUser.length > 0) {
+        res.status(409).json({
+          error: "User already exists",
+          user: existingUser[0],
+        });
+        return;
+      }
+
+      // Create new user
+      const newUser = await db
+        .insert(users)
+        .values({
+          cognitoId,
+          name,
+          email,
+          role,
+        })
+        .returning();
+      console.log("newUser", newUser);
+
+      // Update Cognito with DB user ID
+      const command = new AdminUpdateUserAttributesCommand({
+        UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+        Username: cognitoId, // Use email or sub based on your Cognito setup
+        UserAttributes: [
+          {
+            Name: "custom:userId",
+            Value: newUser[0].id.toString(),
+          },
+        ],
+      });
+
+      await cognitoClient.send(command);
+
+      res.status(201).json({
+        message: "User created successfully",
+        user: newUser[0],
       });
       return;
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ error: "Failed to create user" });
+      return;
     }
-
-    // Create new user
-    const newUser = await db
-    .insert(users)
-    .values({
-      cognitoId,
-      name,
-      email,
-      role,
-    })
-    .returning();
-    
-    res.status(201).json({ 
-      message: 'User created successfully',
-      user: newUser[0]
-    });
-    return;
-
-  } catch (error) {
-    console.error('Error creating user:', error);
-    res.status(500).json({ error: 'Failed to create user' });
-    return;
   }
-});
+);
 
 // router.post('/login', validateData(loginSchema), async (req, res) => {
 //   try {
