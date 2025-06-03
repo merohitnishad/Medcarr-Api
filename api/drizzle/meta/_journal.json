@@ -8,6 +8,13 @@
       "when": 1748872239504,
       "tag": "0000_cynical_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1748928594762,
+      "tag": "0001_steep_hulk",
+      "breakpoints": true
     }
   ]
 }

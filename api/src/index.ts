@@ -1,6 +1,7 @@
 import express, { json, urlencoded, Request } from 'express';
-import productsRoutes from './routes/products/index.js';
+// import productsRoutes from './routes/products/index.js';
 import authRoutes from './routes/auth/index.js';
+import userIndvidualRoutes from './routes/user/individual/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -21,8 +22,9 @@ app.use(urlencoded({ extended: false }));
 app.use(json());
 
 // Routes
-app.use('/products', productsRoutes);
+// app.use('/products', productsRoutes);
 app.use('/auth', authRoutes);
+app.use('/user/individual', userIndvidualRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
