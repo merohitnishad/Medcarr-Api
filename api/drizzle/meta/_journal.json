@@ -15,6 +15,13 @@
       "when": 1748928594762,
       "tag": "0001_steep_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1748951508887,
+      "tag": "0002_oval_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

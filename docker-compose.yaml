@@ -38,7 +38,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
+    # volumes:
       # - ./api/logs:/app/logs # Optional: for log persistence
     restart: unless-stopped
 

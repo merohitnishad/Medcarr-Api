@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootEnv = path.resolve(__dirname, '../../.env');
 
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL!,
+  connectionString: process.env.DATABASE_URL! as string,
 });
 
 pool.connect((err, client, release) => {
