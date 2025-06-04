@@ -18,12 +18,6 @@ import {
 
 const router = Router();
 
-const generateUserToken = (user: any) => {
-  return jwt.sign({ userId: user.id, role: user.role }, "your-secret", {
-    expiresIn: "30d",
-  });
-};
-
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION!,
   credentials: {
@@ -37,8 +31,9 @@ router.post(
   validateData(createUserSchema),
   async (req, res) => {
     try {
-      const { email, name, role } = req.cleanBody;
+      const { email } = req.cleanBody;
 
+      // Find user in Cognito user pool by email
       const listCmd = new ListUsersCommand({
         UserPoolId: process.env.COGNITO_USER_POOL_ID!,
         Filter: `email = "${email}"`,
@@ -55,23 +50,39 @@ router.post(
 
       const cognitoUsername = listRes.Users[0].Username!;
 
-      // Fetch attributes to get the “sub” value explicitly
+      // Get all user details from Cognito
       const getUserCmd = new AdminGetUserCommand({
         UserPoolId: process.env.COGNITO_USER_POOL_ID!,
         Username: cognitoUsername,
       });
       const getUserRes = await cognitoClient.send(getUserCmd);
 
-      // Grab the "sub" attribute from Cognito’s response
-      const subAttribute = (getUserRes.UserAttributes || []).find(
-        (attr) => attr.Name === "sub"
-      );
+      // Extract all required attributes from Cognito
+      const userAttributes = getUserRes.UserAttributes || [];
+      
+      const subAttribute = userAttributes.find(attr => attr.Name === "sub");
+      const nameAttribute = userAttributes.find(attr => attr.Name === "name");
+      const roleAttribute = userAttributes.find(attr => attr.Name === "custom:role");
+
       if (!subAttribute || !subAttribute.Value) {
         res.status(500).json({ error: "Cognito user has no 'sub' attribute" });
         return;
       }
-      const cognitoId = subAttribute.Value; // the unique Cognito sub (UUID)
 
+      const cognitoId = subAttribute.Value; // the unique Cognito sub (UUID)
+      const name = nameAttribute?.Value || "";
+      const roleFromCognito = roleAttribute?.Value;
+      
+      // Map role to valid enum values - cast to the expected type
+      let role: "admin" | "individual" | "organization" | "healthcare";
+      if (roleFromCognito === "admin" || roleFromCognito === "individual" || 
+          roleFromCognito === "organization" || roleFromCognito === "healthcare") {
+        role = roleFromCognito as "admin" | "individual" | "organization" | "healthcare";
+      } else {
+        role = "individual"; // default role
+      }
+
+      // Check if user already exists in our database
       const existingUser = await db
         .select()
         .from(users)
@@ -86,23 +97,21 @@ router.post(
         return;
       }
 
-      //inster with sub id
-
+      // Insert user with data from Cognito
       const [newUser] = await db
         .insert(users)
         .values({
-          cognitoId, // the “sub” from Cognito
+          cognitoId, // Using camelCase as per your schema
           name,
           email,
           role,
         })
         .returning();
 
-      //updateing created user id with custom:userId in Cognito
-
+      // Update Cognito user pool with our created user ID
       const updateCmd = new AdminUpdateUserAttributesCommand({
         UserPoolId: process.env.COGNITO_USER_POOL_ID!,
-        Username: cognitoUsername, // use the same Username we got above
+        Username: cognitoUsername,
         UserAttributes: [
           {
             Name: "custom:userId",
@@ -113,8 +122,7 @@ router.post(
       await cognitoClient.send(updateCmd);
 
       res.status(201).json({
-        message:
-          "User created successfully; Cognito updated with custom:userId",
+        message: "User created successfully",
         user: newUser,
       });
       return;
