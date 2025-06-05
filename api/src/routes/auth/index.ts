@@ -1,14 +1,11 @@
 import { Router } from "express";
 import {
   createUserSchema,
-  loginSchema,
   users,
 } from "../../db/schemas/usersSchema.js";
 import { validateData } from "../../middlewares/validationMiddleware.js";
-import bcrypt from "bcryptjs";
 import { db } from "../../db/index.js";
-import { eq } from "drizzle-orm";
-import jwt from "jsonwebtoken";
+import { eq, and } from "drizzle-orm";
 import {
   CognitoIdentityProviderClient,
   AdminUpdateUserAttributesCommand,
@@ -86,13 +83,19 @@ router.post(
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.cognitoId, cognitoId))
+        .where(
+          and(
+            eq(users.cognitoId, cognitoId), 
+            eq(users.isDeleted, false)
+          )
+        )
         .limit(1);
 
       if (existingUser.length > 0) {
+        const { cognitoId: _, ...userWithoutCognitoId } = existingUser[0];
         res.status(409).json({
           error: "User already exists in our DB",
-          user: existingUser[0],
+          user: userWithoutCognitoId,
         });
         return;
       }
@@ -133,34 +136,5 @@ router.post(
     }
   }
 );
-
-// router.post('/login', validateData(loginSchema), async (req, res) => {
-//   try {
-//     const { email, password } = req.cleanBody;
-
-//     const [user] = await db
-//       .select()
-//       .from(usersTable)
-//       .where(eq(usersTable.email, email));
-//     if (!user) {
-//       res.status(401).json({ error: 'Authentication failed' });
-//       return;
-//     }
-
-//     const matched = await bcrypt.compare(password, user.password);
-//     if (!matched) {
-//       res.status(401).json({ error: 'Authentication failed' });
-//       return;
-//     }
-
-//     // create a jwt token
-//     const token = generateUserToken(user);
-//     // @ts-ignore
-//     delete user.password;
-//     res.status(200).json({ token, user });
-//   } catch (e) {
-//     res.status(500).send('Something went wrong');
-//   }
-// });
 
 export default router;

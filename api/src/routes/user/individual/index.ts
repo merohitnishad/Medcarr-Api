@@ -1,7 +1,7 @@
 // routes/user/individual/index.ts
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../../middlewares/authMiddleware.js';
-import { individualOnly } from '../../../middlewares/roleAuth.js';
+import { individualOnly, requireIndividualRole } from '../../../middlewares/roleAuth.js';
 import { IndividualService } from './individualService.js';
 
 const router = Router();
