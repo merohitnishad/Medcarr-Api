@@ -11,6 +11,7 @@ export const users = pgTable('users', {
   role: roleEnum('role').notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   isDeleted: boolean('is_deleted').default(false).notNull(),
+  profileVerified: boolean('profile_verified').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
