@@ -19,6 +19,7 @@ export interface User {
   role: string;
   name?: string;
   profileCompleted: boolean;
+  profileVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +32,7 @@ export interface IndividualProfile {
   address: string;
   aboutYou?: string;
   specialNote?: string;
+  phoneNumber?: string;
   createdAt: Date;
   updatedAt: Date;
   // Include related data
@@ -46,6 +48,7 @@ export interface CreateIndividualProfileData {
   fullName: string;
   postcode: string;
   address: string;
+  phoneNumber: string
   aboutYou?: string;
   careNeedIds?: string[]; // Changed from careNeeds string to IDs
   languageIds?: string[]; // Changed from languages string array to IDs
@@ -54,7 +57,7 @@ export interface CreateIndividualProfileData {
 
 export class IndividualService {
   // Get individual user's basic info only
-  static async getBasicProfile(userId: string): Promise<User | null> {
+  static async getBasicProfile(userId: string): Promise<User | void> {
     try {
       const result = await db
         .select({
@@ -64,6 +67,7 @@ export class IndividualService {
           role: users.role,
           name: users.name,
           profileCompleted: users.profileCompleted,
+          profileVerified: users.profileVerified,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
         })
@@ -76,7 +80,7 @@ export class IndividualService {
         )
         .limit(1);
 
-      return result[0] || null;
+      result[0] || null;
     } catch (error) {
       console.error('Error fetching individual basic profile:', error);
       throw new Error('Failed to fetch basic profile');
@@ -199,7 +203,7 @@ export class IndividualService {
   }
 
   // Create individual profile (profile completion)
-  static async createProfile(userId: string, profileData: CreateIndividualProfileData): Promise<IndividualProfile> {
+  static async createProfile(userId: string, profileData: CreateIndividualProfileData): Promise<IndividualProfile | void> {
     try {
       // First verify user exists and is individual
       const user = await this.getBasicProfile(userId);
@@ -268,8 +272,6 @@ export class IndividualService {
             updatedAt: new Date() 
           })
           .where(eq(users.id, userId));
-
-          console.log('createdProfile', createdProfile)
         return createdProfile;
       });
 
@@ -371,7 +373,7 @@ export class IndividualService {
   }
 
   // Update basic user info (name, etc.)
-  static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User | null> {
+  static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User | void> {
     try {
       const allowedFields = ['name'] as const;
       
@@ -408,11 +410,12 @@ export class IndividualService {
           role: users.role,
           name: users.name,
           profileCompleted: users.profileCompleted,
+          profileVerified: users.profileVerified,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
         });
 
-      return result[0] || null;
+      result[0] || null;
     } catch (error) {
       console.error('Error updating individual basic info:', error);
       throw new Error('Failed to update basic info');

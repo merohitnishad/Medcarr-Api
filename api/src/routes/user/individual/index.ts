@@ -274,10 +274,36 @@ router.get('/profile/status', individualOnly, async (req: AuthenticatedRequest, 
   }
 });
 
+router.get('/profile/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [careNeeds, languages] = await Promise.all([
+      IndividualService.getAvailableCareNeeds(),
+      IndividualService.getAvailableLanguages()
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        careNeeds,
+        languages
+      }
+    });
+    return;
+  } catch (error) {
+    console.error('Error fetching profile options:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch profile options' 
+    });
+    return;
+  }
+});
+
 // Get specific profile by ID (only their own) - with complete profile
 router.get('/profile/:userId', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId } = req.params;
+    console.log('userId', userId)
     const currentUserId = req.user!.id;
     
     // Individual users can only access their own profile
@@ -313,31 +339,6 @@ router.get('/profile/:userId', individualOnly, async (req: AuthenticatedRequest,
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch profile' 
-    });
-    return;
-  }
-});
-
-router.get('/profile/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const [careNeeds, languages] = await Promise.all([
-      IndividualService.getAvailableCareNeeds(),
-      IndividualService.getAvailableLanguages()
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        careNeeds,
-        languages
-      }
-    });
-    return;
-  } catch (error) {
-    console.error('Error fetching profile options:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to fetch profile options' 
     });
     return;
   }
