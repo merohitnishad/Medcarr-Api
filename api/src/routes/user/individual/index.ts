@@ -53,30 +53,30 @@ router.get('/profile', individualOnly, async (req: AuthenticatedRequest, res: Re
       return;
     }
 
+    // Sanitize the response
     const sanitizedData = IndividualService.sanitizeCompleteUserData(userWithProfile);
 
     res.json({
       success: true,
-      data: sanitizedData,
-      profileCompleted: userWithProfile.profileCompleted
+      data: sanitizedData
     });
     return;
   } catch (error) {
-    console.error('Error in get complete profile route:', error);
+    console.error('Error in get profile route:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to fetch complete profile' 
+      error: 'Failed to fetch profile' 
     });
     return;
   }
 });
 
+
 // Create/Complete individual profile (first time setup)
 router.post('/profile/complete', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const profileData: CreateIndividualProfileData = req.body;
-    
+    const profileData: CreateIndividualProfileData = req.body;    
     // Validate required fields
     const requiredFields = ['fullName', 'postcode', 'address'];
     const missingFields = requiredFields.filter(field => !profileData[field as keyof CreateIndividualProfileData]);
@@ -108,6 +108,30 @@ router.post('/profile/complete', individualOnly, async (req: AuthenticatedReques
         error: 'Profile already exists. Use PUT /profile to update.' 
       });
       return;
+    }
+
+    // Validate care need IDs if provided (additional validation in route)
+    if (profileData.careNeedIds && profileData.careNeedIds.length > 0) {
+      const validCareNeeds = await IndividualService.validateCareNeedIds(profileData.careNeedIds);
+      if (!validCareNeeds) {
+        res.status(400).json({
+          success: false,
+          error: 'One or more care need IDs are invalid'
+        });
+        return;
+      }
+    }
+
+    // Validate language IDs if provided (additional validation in route)
+    if (profileData.languageIds && profileData.languageIds.length > 0) {
+      const validLanguages = await IndividualService.validateLanguageIds(profileData.languageIds);
+      if (!validLanguages) {
+        res.status(400).json({
+          success: false,
+          error: 'One or more language IDs are invalid'
+        });
+        return;
+      }
     }
 
     const createdProfile = await IndividualService.createProfile(userId, profileData);
@@ -289,6 +313,31 @@ router.get('/profile/:userId', individualOnly, async (req: AuthenticatedRequest,
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch profile' 
+    });
+    return;
+  }
+});
+
+router.get('/profile/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [careNeeds, languages] = await Promise.all([
+      IndividualService.getAvailableCareNeeds(),
+      IndividualService.getAvailableLanguages()
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        careNeeds,
+        languages
+      }
+    });
+    return;
+  } catch (error) {
+    console.error('Error fetching profile options:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch profile options' 
     });
     return;
   }
