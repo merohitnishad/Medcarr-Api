@@ -11,6 +11,8 @@ import {
   healthcareProfileLanguages 
 } from '../../../db/schemas/utilsSchema.js';
 import { eq, and, inArray } from 'drizzle-orm';
+import { S3Service } from '../../../utils/s3UploadService.js';
+
 
 export interface User {
   id: string;
@@ -59,6 +61,12 @@ export interface CreateHealthcareProfileData {
   experience?: number;
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
+}
+export interface CreateHealthcareProfileDataWithImage extends Omit<CreateHealthcareProfileData, 'image'> {
+  imageFile?: {
+    buffer: Buffer;
+    originalName: string;
+  };
 }
 
 export class HealthcareService {
@@ -209,14 +217,14 @@ export class HealthcareService {
   }
 
   // Create healthcare profile (profile completion)
-  static async createProfile(userId: string, profileData: CreateHealthcareProfileData): Promise<HealthcareProfile> {
+  static async createProfile(userId: string, profileData: CreateHealthcareProfileDataWithImage): Promise<HealthcareProfile> {
     try {
       // First verify user exists and is healthcare
       const user = await this.getBasicProfile(userId);
       if (!user) {
         throw new Error('User not found or not a healthcare professional');
       }
-
+  
       // Validate speciality IDs if provided
       if (profileData.specialityIds && profileData.specialityIds.length > 0) {
         const validSpecialities = await this.validateSpecialityIds(profileData.specialityIds);
@@ -224,7 +232,7 @@ export class HealthcareService {
           throw new Error('One or more speciality IDs are invalid');
         }
       }
-
+  
       // Validate language IDs if provided
       if (profileData.languageIds && profileData.languageIds.length > 0) {
         const validLanguages = await this.validateLanguageIds(profileData.languageIds);
@@ -232,24 +240,41 @@ export class HealthcareService {
           throw new Error('One or more language IDs are invalid');
         }
       }
-
+  
+      // Handle image upload if provided
+      let imageUrl: string | undefined;
+      if (profileData.imageFile) {
+        try {
+          const uploadResult = await S3Service.uploadHealthcareProfileImage(
+            profileData.imageFile.buffer,
+            userId,
+            profileData.imageFile.originalName
+          );
+          imageUrl = uploadResult.url;
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          throw new Error('Failed to upload profile image');
+        }
+      }
+  
       // Start transaction
       const result = await db.transaction(async (tx) => {
-        // Create the profile (without the many-to-many fields)
-        const { specialityIds, languageIds, ...profileDataWithoutManyToMany } = profileData;
+        // Create the profile (without the many-to-many fields and imageFile)
+        const { specialityIds, languageIds, imageFile, ...profileDataWithoutManyToMany } = profileData;
         
         const [createdProfile] = await tx
           .insert(healthcareProfiles)
           .values({
             userId,
             ...profileDataWithoutManyToMany,
+            image: imageUrl, // Set the uploaded image URL
           })
           .returning();
-
+  
         if (!createdProfile) {
           throw new Error('Failed to create profile');
         }
-
+  
         // Create speciality associations
         if (specialityIds && specialityIds.length > 0) {
           const specialityAssociations = specialityIds.map(specialityId => ({
@@ -259,7 +284,7 @@ export class HealthcareService {
           
           await tx.insert(healthcareProfileSpecialities).values(specialityAssociations);
         }
-
+  
         // Create language associations
         if (languageIds && languageIds.length > 0) {
           const languageAssociations = languageIds.map(languageId => ({
@@ -269,7 +294,7 @@ export class HealthcareService {
           
           await tx.insert(healthcareProfileLanguages).values(languageAssociations);
         }
-
+  
         // Update user profile completion status
         await tx
           .update(users)
@@ -278,10 +303,10 @@ export class HealthcareService {
             updatedAt: new Date() 
           })
           .where(eq(users.id, userId));
-
+  
         return createdProfile;
       });
-
+  
       // Fetch and return the complete profile with relations
       const completeProfile = await this.getCompleteProfile(userId);
       return completeProfile?.healthcareProfile!;
@@ -292,16 +317,17 @@ export class HealthcareService {
   }
 
   // Update healthcare profile
-  static async updateProfile(userId: string, profileData: Partial<CreateHealthcareProfileData>): Promise<HealthcareProfile> {
+  static async updateProfile(userId: string, profileData: Partial<CreateHealthcareProfileDataWithImage>): Promise<HealthcareProfile> {
     try {
       // Verify user exists and has a profile
       const userWithProfile = await this.getCompleteProfile(userId);
       if (!userWithProfile || !userWithProfile.healthcareProfile) {
         throw new Error('User not found or profile does not exist');
       }
-
+  
       const profileId = userWithProfile.healthcareProfile.id;
-
+      const existingImageUrl = userWithProfile.healthcareProfile.image;
+  
       // Validate speciality IDs if provided
       if (profileData.specialityIds && profileData.specialityIds.length > 0) {
         const validSpecialities = await this.validateSpecialityIds(profileData.specialityIds);
@@ -309,7 +335,7 @@ export class HealthcareService {
           throw new Error('One or more speciality IDs are invalid');
         }
       }
-
+  
       // Validate language IDs if provided
       if (profileData.languageIds && profileData.languageIds.length > 0) {
         const validLanguages = await this.validateLanguageIds(profileData.languageIds);
@@ -317,29 +343,53 @@ export class HealthcareService {
           throw new Error('One or more language IDs are invalid');
         }
       }
-
+  
+      // Handle image upload if provided
+      let imageUrl: string | undefined = existingImageUrl;
+      if (profileData.imageFile) {
+        try {
+          const uploadResult = await S3Service.uploadHealthcareProfileImage(
+            profileData.imageFile.buffer,
+            userId,
+            profileData.imageFile.originalName,
+            existingImageUrl // This will overwrite the existing image
+          );
+          imageUrl = uploadResult.url;
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          throw new Error('Failed to upload profile image');
+        }
+      }
+  
       // Start transaction
       await db.transaction(async (tx) => {
-        // Update the profile (without the many-to-many fields)
-        const { specialityIds, languageIds, ...profileDataWithoutManyToMany } = profileData;
+        // Update the profile (without the many-to-many fields and imageFile)
+        const { specialityIds, languageIds, imageFile, ...profileDataWithoutManyToMany } = profileData;
         
-        if (Object.keys(profileDataWithoutManyToMany).length > 0) {
+        const updateData: any = {
+          ...profileDataWithoutManyToMany,
+          updatedAt: new Date(),
+        };
+  
+        // Add image URL to update data if it was uploaded
+        if (profileData.imageFile && imageUrl) {
+          updateData.image = imageUrl;
+        }
+  
+        if (Object.keys(updateData).length > 1) { // More than just updatedAt
           await tx
             .update(healthcareProfiles)
-            .set({
-              ...profileDataWithoutManyToMany,
-              updatedAt: new Date(),
-            })
+            .set(updateData)
             .where(eq(healthcareProfiles.id, profileId));
         }
-
+  
         // Update speciality associations if provided
         if (specialityIds !== undefined) {
           // Remove existing associations
           await tx
             .delete(healthcareProfileSpecialities)
             .where(eq(healthcareProfileSpecialities.healthcareProfileId, profileId));
-
+  
           // Add new associations
           if (specialityIds.length > 0) {
             const specialityAssociations = specialityIds.map(specialityId => ({
@@ -350,14 +400,14 @@ export class HealthcareService {
             await tx.insert(healthcareProfileSpecialities).values(specialityAssociations);
           }
         }
-
+  
         // Update language associations if provided
         if (languageIds !== undefined) {
           // Remove existing associations
           await tx
             .delete(healthcareProfileLanguages)
             .where(eq(healthcareProfileLanguages.healthcareProfileId, profileId));
-
+  
           // Add new associations
           if (languageIds.length > 0) {
             const languageAssociations = languageIds.map(languageId => ({
@@ -369,7 +419,7 @@ export class HealthcareService {
           }
         }
       });
-
+  
       // Fetch and return the updated profile with relations
       const updatedProfile = await this.getCompleteProfile(userId);
       return updatedProfile?.healthcareProfile!;
@@ -378,6 +428,69 @@ export class HealthcareService {
       throw new Error(error instanceof Error ? error.message : 'Failed to update profile');
     }
   }
+  
+  static async deleteProfileImage(userId: string): Promise<HealthcareProfile> {
+    try {
+      // Verify user exists and has a profile
+      const userWithProfile = await this.getCompleteProfile(userId);
+      if (!userWithProfile || !userWithProfile.healthcareProfile) {
+        throw new Error('User not found or profile does not exist');
+      }
+  
+      const profileId = userWithProfile.healthcareProfile.id;
+      const existingImageUrl = userWithProfile.healthcareProfile.image;
+  
+      // Delete image from S3 if exists
+      if (existingImageUrl) {
+        try {
+          const key = this.extractKeyFromUrl(existingImageUrl);
+          if (key) {
+            await S3Service.deleteFile(key);
+          }
+        } catch (error) {
+          console.warn('Failed to delete image from S3:', error);
+          // Continue with database update even if S3 deletion fails
+        }
+      }
+  
+      // Update profile to remove image URL
+      await db
+        .update(healthcareProfiles)
+        .set({
+          image: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(healthcareProfiles.id, profileId));
+  
+      // Fetch and return the updated profile
+      const updatedProfile = await this.getCompleteProfile(userId);
+      return updatedProfile?.healthcareProfile!;
+    } catch (error) {
+      console.error('Error deleting profile image:', error);
+      throw new Error('Failed to delete profile image');
+    }
+  }
+
+  private static extractKeyFromUrl(url: string): string | null {
+    try {
+      const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN;
+      const BUCKET_NAME = process.env.S3_BUCKET_NAME!;
+      
+      // Handle CloudFront URLs
+      if (CLOUDFRONT_DOMAIN && url.includes(CLOUDFRONT_DOMAIN)) {
+        return url.split(`https://${CLOUDFRONT_DOMAIN}/`)[1] || null;
+      }
+  
+      // Handle direct S3 URLs
+      const s3Pattern = new RegExp(`https://${BUCKET_NAME}\\.s3\\.[^/]+\\.amazonaws\\.com/(.+)`);
+      const match = url.match(s3Pattern);
+      return match ? match[1] : null;
+    } catch (error) {
+      console.warn('Failed to extract key from URL:', url);
+      return null;
+    }
+  }
+  
 
   // Update basic user info (name, etc.)
   static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User | null> {
