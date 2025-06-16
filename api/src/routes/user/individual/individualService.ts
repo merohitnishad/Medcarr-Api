@@ -57,7 +57,7 @@ export interface CreateIndividualProfileData {
 
 export class IndividualService {
   // Get individual user's basic info only
-  static async getBasicProfile(userId: string): Promise<User | void> {
+  static async getBasicProfile(userId: string): Promise<User> {
     try {
       const result = await db
         .select({
@@ -80,7 +80,7 @@ export class IndividualService {
         )
         .limit(1);
 
-      result[0] || null;
+      return result[0] || null;
     } catch (error) {
       console.error('Error fetching individual basic profile:', error);
       throw new Error('Failed to fetch basic profile');
@@ -203,7 +203,7 @@ export class IndividualService {
   }
 
   // Create individual profile (profile completion)
-  static async createProfile(userId: string, profileData: CreateIndividualProfileData): Promise<IndividualProfile | void> {
+  static async createProfile(userId: string, profileData: CreateIndividualProfileData): Promise<IndividualProfile> {
     try {
       // First verify user exists and is individual
       const user = await this.getBasicProfile(userId);
@@ -373,7 +373,7 @@ export class IndividualService {
   }
 
   // Update basic user info (name, etc.)
-  static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User | void> {
+  static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User> {
     try {
       const allowedFields = ['name'] as const;
       
@@ -415,7 +415,7 @@ export class IndividualService {
           updatedAt: users.updatedAt,
         });
 
-      result[0] || null;
+      return result[0] || null;
     } catch (error) {
       console.error('Error updating individual basic info:', error);
       throw new Error('Failed to update basic info');
