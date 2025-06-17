@@ -24,12 +24,12 @@ app.use(urlencoded({ extended: true, limit: '50mb' }));
 app.use(json({limit: '50mb'}));
 
 
-const multer = require('multer');
-const upload = multer({
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB
-  }
-});
+// const multer = require('multer');
+// const upload = multer({
+//   limits: {
+//     fileSize: 10 * 1024 * 1024 // 10MB
+//   }
+// });
 
 // Routes
 // app.use('/products', productsRoutes);
