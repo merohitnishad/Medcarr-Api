@@ -243,22 +243,31 @@ export class HealthcareService {
 
       // Handle image upload if provided
       let imageUrl: string | undefined;
-      if (profileData.imageFile) {
+      if (profileData.imageFile && profileData.imageFile.buffer) {
         try {
-          // Ensure we have a proper buffer
-          let fileBuffer: Buffer;
+          // Check what we received
+          console.log("Buffer type:", typeof profileData.imageFile.buffer);
+          console.log("Buffer value:", profileData.imageFile.buffer);
 
-          if (Buffer.isBuffer(profileData.imageFile.buffer) as any) {
-            fileBuffer = profileData.imageFile.buffer;
-          } else if (profileData.imageFile.buffer instanceof Uint8Array) {
-            fileBuffer = Buffer.from(profileData.imageFile.buffer);
-          } else if (typeof profileData.imageFile.buffer === "string") {
-            fileBuffer = Buffer.from(profileData.imageFile.buffer, "base64");
+          let base64String: string;
+
+          if (typeof profileData.imageFile.buffer === "string") {
+            // Already base64 string
+            base64String = profileData.imageFile.buffer;
           } else {
-            throw new Error("Invalid file buffer format");
+            // Still serialized object, convert back to base64
+            const buffer = profileData.imageFile.buffer;
+            const values = Object.keys(buffer)
+              .map((key) => parseInt(key))
+              .filter((key) => !isNaN(key))
+              .sort((a, b) => a - b)
+              .map((key) => buffer[key]);
+
+            base64String = btoa(String.fromCharCode(...values));
           }
 
-          // Add validation
+          const fileBuffer = Buffer.from(base64String, "base64");
+
           if (fileBuffer.length === 0) {
             throw new Error("Empty file buffer");
           }
