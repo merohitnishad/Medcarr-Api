@@ -491,7 +491,6 @@ export class HealthcareService {
     }
   }
   
-
   // Update basic user info (name, etc.)
   static async updateBasicInfo(userId: string, updateData: Partial<Pick<User, 'name'>>): Promise<User | null> {
     try {
