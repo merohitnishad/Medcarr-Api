@@ -396,10 +396,39 @@ export class HealthcareService {
 
       // Handle image upload if provided
       let imageUrl: string | undefined = existingImageUrl;
-      if (profileData.imageFile) {
+      if (profileData.imageFile && profileData.imageFile.buffer) {
         try {
+          let base64String: string;
+
+          if (typeof profileData.imageFile.buffer === "string") {
+            // Already base64 string
+            base64String = profileData.imageFile.buffer;
+          } else {
+            // Still serialized object, convert back to base64
+            const buffer = profileData.imageFile.buffer;
+            const values = Object.keys(buffer)
+              .map((key) => parseInt(key))
+              .filter((key) => !isNaN(key))
+              .sort((a, b) => a - b)
+              .map((key) => buffer[key]);
+
+            let binaryString = '';
+            const chunkSize = 8192; // Process 8KB at a time
+            for (let i = 0; i < values.length; i += chunkSize) {
+              const chunk = values.slice(i, i + chunkSize);
+              binaryString += String.fromCharCode(...chunk);
+            }
+            base64String = btoa(binaryString);
+          }
+
+          const fileBuffer = Buffer.from(base64String, "base64");
+
+          if (fileBuffer.length === 0) {
+            throw new Error("Empty file buffer");
+          }
+
           const uploadResult = await S3Service.uploadHealthcareProfileImage(
-            profileData.imageFile.buffer,
+            fileBuffer,
             userId,
             profileData.imageFile.originalName,
             existingImageUrl // This will overwrite the existing image
@@ -407,7 +436,11 @@ export class HealthcareService {
           imageUrl = uploadResult.url;
         } catch (error) {
           console.error("Error uploading image:", error);
-          throw new Error("Failed to upload profile image");
+          throw new Error(
+            `Failed to upload profile image: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       }
 
