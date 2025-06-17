@@ -1,7 +1,7 @@
 // routes/user/organization/index.ts
 import { Router, Response } from "express";
 import { AuthenticatedRequest } from "../../../middlewares/authMiddleware.js";
-import { requireNonAdmin } from "../../../middlewares/roleAuth.js";
+import { everyone } from "../../../middlewares/roleAuth.js";
 import {
   CommonService,
 } from "./commonService.js";
@@ -11,7 +11,7 @@ const router = Router();
 // Get organization user's basic profile (just user table data)
 router.get(
   "/getUser",
-  requireNonAdmin,
+  everyone,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user!.id;

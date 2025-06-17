@@ -2,6 +2,9 @@ import express, { json, urlencoded, Request } from 'express';
 // import productsRoutes from './routes/products/index.js';
 import authRoutes from './routes/auth/index.js';
 import userIndvidualRoutes from './routes/user/individual/index.js';
+import userOrganizationRoutes from './routes/user/organization/index.js';
+import userHealthCareRoutes from './routes/user/healthcare/index.js';
+import userCommonRoutes from './routes/user/common/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -25,6 +28,9 @@ app.use(json());
 // app.use('/products', productsRoutes);
 app.use('/auth', authRoutes);
 app.use('/user/individual', userIndvidualRoutes);
+app.use('/user/organization', userOrganizationRoutes);
+app.use('/user/healthcare', userHealthCareRoutes);
+app.use('/user/common', userCommonRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

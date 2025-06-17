@@ -83,6 +83,7 @@ export const requireIndividualRole = [verifyToken, requireMinimumRole(UserRole.I
 export const requireOrganizationOrHealthcare = [verifyToken, requireRole([UserRole.ADMIN, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
 export const requireNonIndividual = [verifyToken, requireRole([UserRole.ADMIN, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
 export const requireNonAdmin = [verifyToken, requireRole([UserRole.INDIVIDUAL, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
+export const everyone = [verifyToken, requireRole([UserRole.INDIVIDUAL, UserRole.ORGANIZATION, UserRole.HEALTHCARE, UserRole.ADMIN])];
 
 // Custom role checker function
 export const hasRole = (userRole: string, requiredRoles: string[]): boolean => {
