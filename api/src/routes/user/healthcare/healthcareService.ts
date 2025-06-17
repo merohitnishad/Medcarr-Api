@@ -245,10 +245,6 @@ export class HealthcareService {
       let imageUrl: string | undefined;
       if (profileData.imageFile && profileData.imageFile.buffer) {
         try {
-          // Check what we received
-          console.log("Buffer type:", typeof profileData.imageFile.buffer);
-          console.log("Buffer value:", profileData.imageFile.buffer);
-
           let base64String: string;
 
           if (typeof profileData.imageFile.buffer === "string") {
@@ -263,17 +259,19 @@ export class HealthcareService {
               .sort((a, b) => a - b)
               .map((key) => buffer[key]);
 
-            base64String = btoa(String.fromCharCode(...values));
-          }
+              let binaryString = '';
+              const chunkSize = 8192; // Process 8KB at a time
+              for (let i = 0; i < values.length; i += chunkSize) {
+                const chunk = values.slice(i, i + chunkSize);
+                binaryString += String.fromCharCode(...chunk);
+              }
+              base64String = btoa(binaryString);          }
 
           const fileBuffer = Buffer.from(base64String, "base64");
 
           if (fileBuffer.length === 0) {
             throw new Error("Empty file buffer");
           }
-
-          console.log("File buffer size:", fileBuffer.length);
-          console.log("File type:", profileData.imageFile.originalName);
 
           const uploadResult = await S3Service.uploadHealthcareProfileImage(
             fileBuffer,
