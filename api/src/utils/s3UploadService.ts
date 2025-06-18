@@ -34,10 +34,26 @@ export interface UploadResult {
   contentType: string;
 }
 
+export interface PresignedUploadResult {
+  uploadUrl: string;
+  imageKey: string;
+  publicUrl: string;
+}
+
 export class S3Service {
   /**
    * Generate a unique file name based on user ID and original filename
    */
+
+  private static generateImageKey(userId: string, originalFileName: string): string {
+    const ext = path.extname(originalFileName).toLowerCase();
+    const timestamp = Date.now();
+    const randomSuffix = crypto.randomBytes(4).toString('hex');
+    
+    // Consistent naming for profile images with overwrite capability
+    return `healthcare/profiles/images/${userId}/profile_${timestamp}_${randomSuffix}${ext}`;
+  }
+
   private static generateFileName(userId: string, originalName: string, folder?: string): string {
     const ext = path.extname(originalName);
     const baseName = path.basename(originalName, ext);
@@ -85,12 +101,13 @@ export class S3Service {
   /**
    * Get public URL for S3 object
    */
-  private static getPublicUrl(key: string): string {
+  static getPublicUrl(key: string): string {
     if (CLOUDFRONT_DOMAIN) {
       return `https://${CLOUDFRONT_DOMAIN}/${key}`;
     }
-    return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+    return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'eu-west-2'}.amazonaws.com/${key}`;
   }
+  
 
   /**
    * Upload file to S3
@@ -275,6 +292,22 @@ export class S3Service {
     }
   }
 
+  static validateImageFile(file: File): { isValid: boolean; error?: string } {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+    if (file.size > maxSize) {
+      return { isValid: false, error: 'Image size must be less than 5MB' };
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      return { isValid: false, error: 'Only JPG, PNG, and WebP images are allowed' };
+    }
+
+    return { isValid: true };
+  }
+
+
   /**
    * Extract S3 key from URL
    */
@@ -337,6 +370,27 @@ export class S3Service {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  static async deleteImageByUrl(imageUrl: string): Promise<void> {
+    try {
+      const key = this.extractKeyFromUrl(imageUrl);
+      if (!key) {
+        console.warn('Could not extract key from URL:', imageUrl);
+        return;
+      }
+
+      const command = new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      });
+
+      await s3Client.send(command);
+      console.log('Successfully deleted image:', key);
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      // Don't throw error - deletion failure shouldn't break the update
     }
   }
 

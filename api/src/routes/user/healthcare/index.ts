@@ -3,6 +3,8 @@ import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../../middlewares/authMiddleware.js';
 import { healthcareOnly } from '../../../middlewares/roleAuth.js';
 import { HealthcareService, CreateHealthcareProfileData } from './healthcareService.js';
+import { S3Service } from "../../../utils/s3UploadService.js";
+
 
 const router = Router();
 
@@ -304,7 +306,6 @@ router.get('/profile/options', healthcareOnly, async (req: AuthenticatedRequest,
 router.get('/profile/:userId', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId } = req.params;
-    console.log('userId', userId);
     const currentUserId = req.user!.id;
     
     // Healthcare users can only access their own profile
@@ -342,6 +343,77 @@ router.get('/profile/:userId', healthcareOnly, async (req: AuthenticatedRequest,
       error: 'Failed to fetch profile' 
     });
     return;
+  }
+});
+
+/**
+ * Generate presigned URL for image upload
+ */
+router.post('/presigned-url', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { userId, fileName, contentType } = req.body;
+
+    // Validate required fields
+    if (!userId || !fileName || !contentType) {
+      res.status(400).json({
+        error: 'Missing required fields: userId, fileName, contentType'
+      });
+      return
+    }
+
+    // Validate file type
+    if (!contentType.startsWith('image/')) {
+      res.status(400).json({
+        error: 'Only image files are allowed'
+      });
+      return
+    }
+
+    const result = await S3Service.generatePresignedUploadUrl(
+      userId,
+      fileName,
+      contentType
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('Error generating presigned URL:', error);
+    res.status(500).json({
+      error: 'Failed to generate upload URL',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * Get public URL from S3 key
+ */
+router.post('/public-url', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { imageKey } = req.body;
+
+    if (!imageKey) {
+      res.status(400).json({
+        error: 'Missing imageKey'
+      });
+      return
+    }
+
+    const publicUrl = S3Service.getPublicUrl(imageKey);
+
+    res.json({
+      success: true,
+      data: { publicUrl }
+    });
+  } catch (error) {
+    console.error('Error getting public URL:', error);
+    res.status(500).json({
+      error: 'Failed to get public URL'
+    });
   }
 });
 

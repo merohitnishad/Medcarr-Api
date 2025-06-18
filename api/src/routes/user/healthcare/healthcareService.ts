@@ -48,7 +48,8 @@ export interface UserWithProfile extends User {
 export interface CreateHealthcareProfileData {
   fullName: string;
   professionalTitle: string;
-  image?: string;
+  imageKey?: string;
+  imageUrl?: string;  
   postcode: string;
   phoneNumber: string;
   address: string;
@@ -58,13 +59,13 @@ export interface CreateHealthcareProfileData {
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
 }
-export interface CreateHealthcareProfileDataWithImage
-  extends Omit<CreateHealthcareProfileData, "image"> {
-  imageFile?: {
-    buffer: Buffer;
-    originalName: string;
-  };
-}
+// export interface CreateHealthcareProfileDataWithImage
+//   extends Omit<CreateHealthcareProfileData, "image"> {
+//   imageFile?: {
+//     buffer: Buffer;
+//     originalName: string;
+//   };
+// }
 
 export class HealthcareService {
   // Get healthcare user's basic info only
@@ -212,7 +213,7 @@ export class HealthcareService {
   // Create healthcare profile (profile completion)
   static async createProfile(
     userId: string,
-    profileData: CreateHealthcareProfileDataWithImage
+    profileData: CreateHealthcareProfileData
   ): Promise<HealthcareProfile> {
     try {
       // First verify user exists and is healthcare
@@ -242,52 +243,52 @@ export class HealthcareService {
       }
 
       // Handle image upload if provided
-      let imageUrl: string | undefined;
-      if (profileData.imageFile && profileData.imageFile.buffer) {
-        try {
-          let base64String: string;
+      // let imageUrl: string | undefined;
+      // if (profileData.imageFile && profileData.imageFile.buffer) {
+      //   try {
+      //     let base64String: string;
 
-          if (typeof profileData.imageFile.buffer === "string") {
-            // Already base64 string
-            base64String = profileData.imageFile.buffer;
-          } else {
-            // Still serialized object, convert back to base64
-            const buffer = profileData.imageFile.buffer;
-            const values = Object.keys(buffer)
-              .map((key) => parseInt(key))
-              .filter((key) => !isNaN(key))
-              .sort((a, b) => a - b)
-              .map((key) => buffer[key]);
+      //     if (typeof profileData.imageFile.buffer === "string") {
+      //       // Already base64 string
+      //       base64String = profileData.imageFile.buffer;
+      //     } else {
+      //       // Still serialized object, convert back to base64
+      //       const buffer = profileData.imageFile.buffer;
+      //       const values = Object.keys(buffer)
+      //         .map((key) => parseInt(key))
+      //         .filter((key) => !isNaN(key))
+      //         .sort((a, b) => a - b)
+      //         .map((key) => buffer[key]);
 
-              let binaryString = '';
-              const chunkSize = 8192; // Process 8KB at a time
-              for (let i = 0; i < values.length; i += chunkSize) {
-                const chunk = values.slice(i, i + chunkSize);
-                binaryString += String.fromCharCode(...chunk);
-              }
-              base64String = btoa(binaryString);          }
+      //         let binaryString = '';
+      //         const chunkSize = 8192; // Process 8KB at a time
+      //         for (let i = 0; i < values.length; i += chunkSize) {
+      //           const chunk = values.slice(i, i + chunkSize);
+      //           binaryString += String.fromCharCode(...chunk);
+      //         }
+      //         base64String = btoa(binaryString);          }
 
-          const fileBuffer = Buffer.from(base64String, "base64");
+      //     const fileBuffer = Buffer.from(base64String, "base64");
 
-          if (fileBuffer.length === 0) {
-            throw new Error("Empty file buffer");
-          }
+      //     if (fileBuffer.length === 0) {
+      //       throw new Error("Empty file buffer");
+      //     }
 
-          const uploadResult = await S3Service.uploadHealthcareProfileImage(
-            fileBuffer,
-            userId,
-            profileData.imageFile.originalName
-          );
-          imageUrl = uploadResult.url;
-        } catch (error) {
-          console.error("Error uploading image:", error);
-          throw new Error(
-            `Failed to upload profile image: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      }
+      //     const uploadResult = await S3Service.uploadHealthcareProfileImage(
+      //       fileBuffer,
+      //       userId,
+      //       profileData.imageFile.originalName
+      //     );
+      //     imageUrl = uploadResult.url;
+      //   } catch (error) {
+      //     console.error("Error uploading image:", error);
+      //     throw new Error(
+      //       `Failed to upload profile image: ${
+      //         error instanceof Error ? error.message : String(error)
+      //       }`
+      //     );
+      //   }
+      // }
 
       // Start transaction
       const result = await db.transaction(async (tx) => {
@@ -295,7 +296,7 @@ export class HealthcareService {
         const {
           specialityIds,
           languageIds,
-          imageFile,
+          imageKey,
           ...profileDataWithoutManyToMany
         } = profileData;
 
@@ -304,7 +305,7 @@ export class HealthcareService {
           .values({
             userId,
             ...profileDataWithoutManyToMany,
-            image: imageUrl, // Set the uploaded image URL
+            image: profileData.imageUrl, // Set the uploaded image URL
           })
           .returning();
 
@@ -362,7 +363,7 @@ export class HealthcareService {
   // Update healthcare profile
   static async updateProfile(
     userId: string,
-    profileData: Partial<CreateHealthcareProfileDataWithImage>
+    profileData: Partial<CreateHealthcareProfileData>
   ): Promise<HealthcareProfile> {
     try {
       // Verify user exists and has a profile
@@ -370,10 +371,9 @@ export class HealthcareService {
       if (!userWithProfile || !userWithProfile.healthcareProfile) {
         throw new Error("User not found or profile does not exist");
       }
-
+  
       const profileId = userWithProfile.healthcareProfile.id;
-      const existingImageUrl = userWithProfile.healthcareProfile.image;
-
+  
       // Validate speciality IDs if provided
       if (profileData.specialityIds && profileData.specialityIds.length > 0) {
         const validSpecialities = await this.validateSpecialityIds(
@@ -383,7 +383,7 @@ export class HealthcareService {
           throw new Error("One or more speciality IDs are invalid");
         }
       }
-
+  
       // Validate language IDs if provided
       if (profileData.languageIds && profileData.languageIds.length > 0) {
         const validLanguages = await this.validateLanguageIds(
@@ -393,77 +393,75 @@ export class HealthcareService {
           throw new Error("One or more language IDs are invalid");
         }
       }
-
+  
       // Handle image upload if provided
-      let imageUrl: string | undefined = existingImageUrl;
-      if (profileData.imageFile && profileData.imageFile.buffer) {
-        try {
-          let base64String: string;
-
-          if (typeof profileData.imageFile.buffer === "string") {
-            // Already base64 string
-            base64String = profileData.imageFile.buffer;
-          } else {
-            // Still serialized object, convert back to base64
-            const buffer = profileData.imageFile.buffer;
-            const values = Object.keys(buffer)
-              .map((key) => parseInt(key))
-              .filter((key) => !isNaN(key))
-              .sort((a, b) => a - b)
-              .map((key) => buffer[key]);
-
-            let binaryString = '';
-            const chunkSize = 8192; // Process 8KB at a time
-            for (let i = 0; i < values.length; i += chunkSize) {
-              const chunk = values.slice(i, i + chunkSize);
-              binaryString += String.fromCharCode(...chunk);
-            }
-            base64String = btoa(binaryString);
-          }
-
-          const fileBuffer = Buffer.from(base64String, "base64");
-
-          if (fileBuffer.length === 0) {
-            throw new Error("Empty file buffer");
-          }
-
-          const uploadResult = await S3Service.uploadHealthcareProfileImage(
-            fileBuffer,
-            userId,
-            profileData.imageFile.originalName,
-            existingImageUrl // This will overwrite the existing image
-          );
-          imageUrl = uploadResult.url;
-        } catch (error) {
-          console.error("Error uploading image:", error);
-          throw new Error(
-            `Failed to upload profile image: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      }
-
+      // let imageUrl: string | undefined;
+      // if (profileData.imageFile && profileData.imageFile.buffer) {
+      //   try {
+      //     let base64String: string;
+  
+      //     if (typeof profileData.imageFile.buffer === "string") {
+      //       // Already base64 string
+      //       base64String = profileData.imageFile.buffer;
+      //     } else {
+      //       // Still serialized object, convert back to base64
+      //       const buffer = profileData.imageFile.buffer;
+      //       const values = Object.keys(buffer)
+      //         .map((key) => parseInt(key))
+      //         .filter((key) => !isNaN(key))
+      //         .sort((a, b) => a - b)
+      //         .map((key) => buffer[key]);
+  
+      //         let binaryString = '';
+      //         const chunkSize = 8192; // Process 8KB at a time
+      //         for (let i = 0; i < values.length; i += chunkSize) {
+      //           const chunk = values.slice(i, i + chunkSize);
+      //           binaryString += String.fromCharCode(...chunk);
+      //         }
+      //         base64String = btoa(binaryString);          }
+  
+      //     const fileBuffer = Buffer.from(base64String, "base64");
+  
+      //     if (fileBuffer.length === 0) {
+      //       throw new Error("Empty file buffer");
+      //     }
+  
+      //     const uploadResult = await S3Service.uploadHealthcareProfileImage(
+      //       fileBuffer,
+      //       userId,
+      //       profileData.imageFile.originalName
+      //     );
+      //     imageUrl = uploadResult.url;
+      //   } catch (error) {
+      //     console.error("Error uploading image:", error);
+      //     throw new Error(
+      //       `Failed to upload profile image: ${
+      //         error instanceof Error ? error.message : String(error)
+      //       }`
+      //     );
+      //   }
+      // }
+  
       // Start transaction
       await db.transaction(async (tx) => {
         // Update the profile (without the many-to-many fields and imageFile)
         const {
           specialityIds,
           languageIds,
-          imageFile,
+          imageKey,
           ...profileDataWithoutManyToMany
         } = profileData;
-
+  
         const updateData: any = {
           ...profileDataWithoutManyToMany,
           updatedAt: new Date(),
         };
-
-        // Add image URL to update data if it was uploaded
-        if (profileData.imageFile && imageUrl) {
-          updateData.image = imageUrl;
+  
+        // Add image URL to update data if provided
+        if (profileData.imageUrl) {
+          updateData.image = profileData.imageUrl;
         }
-
+  
         if (Object.keys(updateData).length > 1) {
           // More than just updatedAt
           await tx
@@ -471,7 +469,7 @@ export class HealthcareService {
             .set(updateData)
             .where(eq(healthcareProfiles.id, profileId));
         }
-
+  
         // Update speciality associations if provided
         if (specialityIds !== undefined) {
           // Remove existing associations
@@ -480,7 +478,7 @@ export class HealthcareService {
             .where(
               eq(healthcareProfileSpecialities.healthcareProfileId, profileId)
             );
-
+  
           // Add new associations
           if (specialityIds.length > 0) {
             const specialityAssociations = specialityIds.map(
@@ -489,13 +487,13 @@ export class HealthcareService {
                 specialityId,
               })
             );
-
+  
             await tx
               .insert(healthcareProfileSpecialities)
               .values(specialityAssociations);
           }
         }
-
+  
         // Update language associations if provided
         if (languageIds !== undefined) {
           // Remove existing associations
@@ -504,21 +502,21 @@ export class HealthcareService {
             .where(
               eq(healthcareProfileLanguages.healthcareProfileId, profileId)
             );
-
+  
           // Add new associations
           if (languageIds.length > 0) {
             const languageAssociations = languageIds.map((languageId) => ({
               healthcareProfileId: profileId,
               languageId,
             }));
-
+  
             await tx
               .insert(healthcareProfileLanguages)
               .values(languageAssociations);
           }
         }
       });
-
+  
       // Fetch and return the updated profile with relations
       const updatedProfile = await this.getCompleteProfile(userId);
       return updatedProfile?.healthcareProfile!;
