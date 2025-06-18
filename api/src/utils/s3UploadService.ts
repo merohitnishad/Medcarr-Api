@@ -201,32 +201,36 @@ export class S3Service {
     userId: string,
     fileName: string,
     contentType: string,
-    folder?: string,
-    expiresIn: number = 3600 // 1 hour default
-  ): Promise<{ url: string; key: string; fields: Record<string, string> }> {
+    expiresIn: number = 3600
+  ): Promise<PresignedUploadResult> {
     try {
-      const key = this.generateFileName(userId, fileName, folder);
+      // Validate content type
+      if (!contentType.startsWith('image/')) {
+        throw new Error('Only image files are allowed');
+      }
+
+      const imageKey = this.generateImageKey(userId, fileName);
       
       const command = new PutObjectCommand({
         Bucket: BUCKET_NAME,
-        Key: key,
+        Key: imageKey,
         ContentType: contentType,
         ServerSideEncryption: 'AES256',
+        CacheControl: 'public, max-age=31536000', // 1 year cache
         Metadata: {
           userId: userId,
           uploadedAt: new Date().toISOString(),
+          originalFileName: fileName,
         },
       });
 
-      const url = await getSignedUrl(s3Client, command, { expiresIn });
+      const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn });
+      const publicUrl = this.getPublicUrl(imageKey);
 
       return {
-        url,
-        key,
-        fields: {
-          'Content-Type': contentType,
-          'x-amz-server-side-encryption': 'AES256',
-        },
+        uploadUrl,
+        imageKey,
+        publicUrl,
       };
     } catch (error) {
       console.error('Error generating presigned URL:', error);
