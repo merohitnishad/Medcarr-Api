@@ -5,6 +5,7 @@ import userIndvidualRoutes from './routes/user/individual/index.js';
 import userOrganizationRoutes from './routes/user/organization/index.js';
 import userHealthCareRoutes from './routes/user/healthcare/index.js';
 import userCommonRoutes from './routes/user/common/index.js';
+import jobRoutes from './routes/job/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -30,6 +31,7 @@ app.use('/user/individual', userIndvidualRoutes);
 app.use('/user/organization', userOrganizationRoutes);
 app.use('/user/healthcare', userHealthCareRoutes);
 app.use('/user/common', userCommonRoutes);
+app.use('/job', jobRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

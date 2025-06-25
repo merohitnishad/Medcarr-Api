@@ -338,3 +338,4 @@ router.patch('/:jobPostId/close', individualOnly, async (req: AuthenticatedReque
   }
 });
 
+export default router;
