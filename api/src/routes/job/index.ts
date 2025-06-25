@@ -1,13 +1,13 @@
 // routes/user/jobPost/index.ts
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
-import { individualOnly } from '../../middlewares/roleAuth.js';
+import { requireNonHealthCare } from '../../middlewares/roleAuth.js';
 import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } from './jobPostService.js';
 
 const router = Router();
 
 // Create a new job post
-router.post('/', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const jobPostData: CreateJobPostData = req.body;
@@ -89,7 +89,7 @@ router.post('/', individualOnly, async (req: AuthenticatedRequest, res: Response
   }
 });
 
-router.get('/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/options', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const [careNeeds, languages, preferences] = await Promise.all([
           JobPostService.getAvailableCareNeeds(),
@@ -117,7 +117,7 @@ router.get('/options', individualOnly, async (req: AuthenticatedRequest, res: Re
   });
 
 // Get a specific job post by ID
-router.get('/:jobPostId', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
     
@@ -149,7 +149,7 @@ router.get('/:jobPostId', individualOnly, async (req: AuthenticatedRequest, res:
 });
 
 // Get all job posts with pagination and filters
-router.get('/', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const filters: JobPostFilters = {
       page: req.query.page ? parseInt(req.query.page as string) : 1,
@@ -189,7 +189,7 @@ router.get('/', individualOnly, async (req: AuthenticatedRequest, res: Response)
 });
 
 // Get current user's job posts
-router.get('/my/posts', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const filters: JobPostFilters = {
@@ -219,7 +219,7 @@ router.get('/my/posts', individualOnly, async (req: AuthenticatedRequest, res: R
 });
 
 // Update a job post
-router.put('/:jobPostId', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
     const userId = req.user!.id;
@@ -307,7 +307,7 @@ router.put('/:jobPostId', individualOnly, async (req: AuthenticatedRequest, res:
 });
 
 // Close a job post (change status to closed)
-router.patch('/:jobPostId/close', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:jobPostId/close', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
     const userId = req.user!.id;

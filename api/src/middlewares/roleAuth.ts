@@ -82,6 +82,7 @@ export const requireIndividualRole = [verifyToken, requireMinimumRole(UserRole.I
 // Specific access patterns for your business logic
 export const requireOrganizationOrHealthcare = [verifyToken, requireRole([UserRole.ADMIN, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
 export const requireNonIndividual = [verifyToken, requireRole([UserRole.ADMIN, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
+export const requireNonHealthCare = [verifyToken, requireRole([UserRole.ADMIN, UserRole.ORGANIZATION, UserRole.INDIVIDUAL])];
 export const requireNonAdmin = [verifyToken, requireRole([UserRole.INDIVIDUAL, UserRole.ORGANIZATION, UserRole.HEALTHCARE])];
 export const everyone = [verifyToken, requireRole([UserRole.INDIVIDUAL, UserRole.ORGANIZATION, UserRole.HEALTHCARE, UserRole.ADMIN])];
 
