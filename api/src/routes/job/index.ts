@@ -89,6 +89,33 @@ router.post('/', individualOnly, async (req: AuthenticatedRequest, res: Response
   }
 });
 
+router.get('/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const [careNeeds, languages, preferences] = await Promise.all([
+          JobPostService.getAvailableCareNeeds(),
+          JobPostService.getAvailableLanguages(),
+          JobPostService.getAvailablePreferences()
+      ]);
+  
+      res.json({
+        success: true,
+        data: {
+          careNeeds,
+          languages,
+          preferences
+        }
+      });
+      return;
+    } catch (error) {
+      console.error('Error fetching job options:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch job options' 
+      });
+      return;
+    }
+  });
+
 // Get a specific job post by ID
 router.get('/:jobPostId', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -186,33 +213,6 @@ router.get('/my/posts', individualOnly, async (req: AuthenticatedRequest, res: R
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch your job posts' 
-    });
-    return;
-  }
-});
-
-router.get('/job/options', individualOnly, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const [careNeeds, languages, preferences] = await Promise.all([
-        JobPostService.getAvailableCareNeeds(),
-        JobPostService.getAvailableLanguages(),
-        JobPostService.getAvailablePreferences()
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        careNeeds,
-        languages,
-        preferences
-      }
-    });
-    return;
-  } catch (error) {
-    console.error('Error fetching job options:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to fetch job options' 
     });
     return;
   }
