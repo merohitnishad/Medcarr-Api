@@ -8,6 +8,7 @@ import {
   text,
   integer,
   pgEnum,
+  time,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -51,8 +52,8 @@ export const jobPosts = pgTable(
     title: varchar("title", { length: 255 }).notNull(),
     postcode: varchar("postcode", { length: 20 }).notNull(),
     address: text("address").notNull(),
-    startTime: timestamp("start_time").notNull(),
-    endTime: timestamp("end_time").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
     shiftLength: integer("shift_length").notNull(), // in hours
     overview: text("overview").notNull(),
     caregiverGender: caregiverGenderEnum("caregiver_gender").notNull(),

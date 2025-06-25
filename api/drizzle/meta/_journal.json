@@ -8,6 +8,13 @@
       "when": 1750841062606,
       "tag": "0000_yielding_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1750854318441,
+      "tag": "0001_free_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

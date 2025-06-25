@@ -18,8 +18,8 @@ export interface CreateJobPostData {
   title: string;
   postcode: string;
   address: string;
-  startTime: Date;
-  endTime: Date;
+  startTime: string;
+  endTime: string;
   shiftLength: number;
   overview: string;
   caregiverGender: 'male' | 'female';
