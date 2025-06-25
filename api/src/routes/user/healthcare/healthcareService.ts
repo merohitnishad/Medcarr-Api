@@ -1,11 +1,9 @@
 // routes/user/healthcare/healthcareService.ts
 import { db } from "../../../db/index.js";
-import { users, healthcareProfiles } from "../../../db/schemas/usersSchema.js";
+import { users, healthcareProfiles, healthcareProfileLanguages, healthcareProfileSpecialities } from "../../../db/schemas/usersSchema.js";
 import {
   specialities,
-  healthcareProfileSpecialities,
   languages,
-  healthcareProfileLanguages,
 } from "../../../db/schemas/utilsSchema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { S3Service } from "../../../utils/s3UploadService.js";

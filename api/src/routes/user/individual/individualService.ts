@@ -3,12 +3,12 @@ import { db } from '../../../db/index.js';
 import { 
   users, 
   individualProfiles,
+  individualProfileLanguages,
+  individualProfileCareNeeds
 } from '../../../db/schemas/usersSchema.js';
 import { 
   careNeeds, 
-  individualProfileCareNeeds, 
-  languages, 
-  individualProfileLanguages 
+  languages,  
 } from '../../../db/schemas/utilsSchema.js';
 import { eq, and, inArray } from 'drizzle-orm';
 

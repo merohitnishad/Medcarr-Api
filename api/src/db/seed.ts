@@ -6,6 +6,7 @@ import {
   careNeedsData,
   languagesData,
   specialitiesData,
+  preferencesData
 } from "../db/seeders/utils";
 
 if (!process.env.DATABASE_URL) {
@@ -46,6 +47,7 @@ const main = async () => {
       seedTable("Languages", schema.languages, languagesData),
       seedTable("Specialities", schema.specialities, specialitiesData),
       seedTable("Care Needs", schema.careNeeds, careNeedsData),
+      seedTable("Preferences", schema.preferences, preferencesData),
     ]);
 
     const hasErrors = results.some(result => 

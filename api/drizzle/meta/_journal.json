@@ -5,71 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1748872239504,
-      "tag": "0000_cynical_loki",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1748928594762,
-      "tag": "0001_steep_hulk",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1749707511622,
-      "tag": "0002_smiling_sharon_carter",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1749740331236,
-      "tag": "0003_fancy_night_thrasher",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1749741525664,
-      "tag": "0004_wet_rocket_racer",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1749796472644,
-      "tag": "0005_fancy_mikhail_rasputin",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1749796548123,
-      "tag": "0006_safe_nightmare",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1749806609554,
-      "tag": "0007_burly_gamma_corps",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1749812659962,
-      "tag": "0008_foamy_lethal_legion",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1749816551354,
-      "tag": "0009_talented_doctor_octopus",
+      "when": 1750841062606,
+      "tag": "0000_yielding_owl",
       "breakpoints": true
     }
   ]

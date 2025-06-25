@@ -36,3 +36,18 @@ export const careNeedsData = [
     { name: 'Post-Surgical Support' },
     { name: 'Wound Care & Dressing' },
 ];
+
+export const preferencesData = [
+    { name: 'Pet Friendly' },
+    { name: 'Non-Smoking' },
+    { name: 'Fluent in Spanish' },
+    { name: 'Female Caregiver' },
+    { name: 'Male Caregiver' },
+    { name: 'Background Checked' },
+    { name: 'First Aid/CPR Certified' },
+    { name: 'Valid Driver’s License' },
+    { name: 'Vaccinated' },
+    { name: 'Prefers Daytime Shifts' },
+    { name: 'Night Shift Available' },
+    { name: 'Flexible Schedule' },
+  ];
