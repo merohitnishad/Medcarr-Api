@@ -24,7 +24,7 @@ export interface HealthcareProfile {
   id: string;
   userId: string;
   fullName: string;
-  dateOfBirth: Date;
+  dateOfBirth: string;
   gender: string;
   professionalTitle: string;
   image?: string;
@@ -254,7 +254,7 @@ export class HealthcareService {
           .values({
             userId,
             ...profileDataWithoutManyToMany,
-            dateOfBirth: new Date(profileData.dateOfBirth), // Convert string to Date
+            dateOfBirth: profileData.dateOfBirth, // Convert string to Date
             gender: profileData.gender as "male" | "female", 
             image: profileData.imageUrl, // Set the uploaded image URL
           })
@@ -360,9 +360,6 @@ export class HealthcareService {
           updatedAt: new Date(),
         };
 
-        if (profileData.dateOfBirth) {
-          updateData.dateOfBirth = new Date(profileData.dateOfBirth);
-        }
         if (profileData.gender) {
           updateData.gender = profileData.gender as "male" | "female";
         }

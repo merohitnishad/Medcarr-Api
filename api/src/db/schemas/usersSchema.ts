@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, varchar, uuid, timestamp, boolean, pgEnum, text, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, uuid, timestamp, boolean, pgEnum, text, integer, index, date } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
 import { careNeeds, languages, specialities } from './utilsSchema';
 
@@ -59,7 +59,7 @@ export const healthcareProfiles = pgTable('healthcare_profiles', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
   fullName: varchar('full_name', { length: 255 }).notNull(),
-  dateOfBirth: timestamp('date_of_birth').notNull(),
+  dateOfBirth: date('date_of_birth').notNull(),
   gender: genderEnum('gender').notNull(),
   professionalTitle: varchar('professional_title', { length: 255 }).notNull(),
   image: varchar('image_url', { length: 500 }),
