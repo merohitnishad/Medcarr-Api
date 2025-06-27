@@ -44,7 +44,6 @@ export const jobPosts = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    name: varchar("name", { length: 255 }).notNull(),
     age: integer("age").notNull(),
     status: jobStatus("status").default("open").notNull(),
     relationship: varchar("relationship", { length: 100 }),

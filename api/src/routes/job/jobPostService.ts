@@ -11,7 +11,6 @@ import { careNeeds,languages,preferences  } from '../../db/schemas/utilsSchema.j
 import { eq, and, desc, count, asc } from 'drizzle-orm';
 
 export interface CreateJobPostData {
-  name: string;
   age: number;
   relationship?: string;
   gender: 'male' | 'female';
@@ -54,7 +53,6 @@ export class JobPostService {
         .insert(jobPosts)
         .values({
           userId,
-          name: data.name,
           age: data.age,
           relationship: data.relationship,
           gender: data.gender,
@@ -376,10 +374,6 @@ export class JobPostService {
   // Validation helpers
   static validateJobPostData(data: Partial<CreateJobPostData>): string[] {
     const errors: string[] = [];
-
-    if (data.name && data.name.trim().length < 2) {
-      errors.push('Name must be at least 2 characters long');
-    }
 
     if (data.age && (data.age < 0 || data.age > 120)) {
       errors.push('Age must be between 0 and 120');

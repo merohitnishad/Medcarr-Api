@@ -3,8 +3,8 @@ import { pgTable, varchar, uuid, timestamp, boolean, pgEnum, text, integer, inde
 import { createInsertSchema } from 'drizzle-zod';
 import { careNeeds, languages, specialities } from './utilsSchema';
 
-
 export const roleEnum = pgEnum('role', ['admin', 'individual', 'organization', 'healthcare']);
+export const genderEnum = pgEnum("gender", ["male", "female"]);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -59,8 +59,11 @@ export const healthcareProfiles = pgTable('healthcare_profiles', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
   fullName: varchar('full_name', { length: 255 }).notNull(),
+  dateOfBirth: timestamp('date_of_birth').notNull(),
+  gender: genderEnum('gender').notNull(),
   professionalTitle: varchar('professional_title', { length: 255 }).notNull(),
   image: varchar('image_url', { length: 500 }),
+  nationality: varchar('nationality', { length: 100 }).notNull(), // added nationality
   postcode: varchar('postcode', { length: 20 }).notNull(),
   phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
   address: text('address').notNull(),

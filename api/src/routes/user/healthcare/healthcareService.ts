@@ -24,10 +24,13 @@ export interface HealthcareProfile {
   id: string;
   userId: string;
   fullName: string;
+  dateOfBirth: Date;
+  gender: string;
   professionalTitle: string;
   image?: string;
   postcode: string;
   phoneNumber: string;
+  nationality?: string;
   address: string;
   professionalSummary: string;
   preferredTime?: string[];
@@ -45,11 +48,14 @@ export interface UserWithProfile extends User {
 
 export interface CreateHealthcareProfileData {
   fullName: string;
+  dateOfBirth: string;
+  gender: string;
   professionalTitle: string;
   imageKey?: string;
   imageUrl?: string;  
   postcode: string;
   phoneNumber: string;
+  nationality: string;
   address: string;
   professionalSummary: string;
   preferredTime?: string[];
@@ -57,13 +63,6 @@ export interface CreateHealthcareProfileData {
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
 }
-// export interface CreateHealthcareProfileDataWithImage
-//   extends Omit<CreateHealthcareProfileData, "image"> {
-//   imageFile?: {
-//     buffer: Buffer;
-//     originalName: string;
-//   };
-// }
 
 export class HealthcareService {
   // Get healthcare user's basic info only
@@ -240,54 +239,6 @@ export class HealthcareService {
         }
       }
 
-      // Handle image upload if provided
-      // let imageUrl: string | undefined;
-      // if (profileData.imageFile && profileData.imageFile.buffer) {
-      //   try {
-      //     let base64String: string;
-
-      //     if (typeof profileData.imageFile.buffer === "string") {
-      //       // Already base64 string
-      //       base64String = profileData.imageFile.buffer;
-      //     } else {
-      //       // Still serialized object, convert back to base64
-      //       const buffer = profileData.imageFile.buffer;
-      //       const values = Object.keys(buffer)
-      //         .map((key) => parseInt(key))
-      //         .filter((key) => !isNaN(key))
-      //         .sort((a, b) => a - b)
-      //         .map((key) => buffer[key]);
-
-      //         let binaryString = '';
-      //         const chunkSize = 8192; // Process 8KB at a time
-      //         for (let i = 0; i < values.length; i += chunkSize) {
-      //           const chunk = values.slice(i, i + chunkSize);
-      //           binaryString += String.fromCharCode(...chunk);
-      //         }
-      //         base64String = btoa(binaryString);          }
-
-      //     const fileBuffer = Buffer.from(base64String, "base64");
-
-      //     if (fileBuffer.length === 0) {
-      //       throw new Error("Empty file buffer");
-      //     }
-
-      //     const uploadResult = await S3Service.uploadHealthcareProfileImage(
-      //       fileBuffer,
-      //       userId,
-      //       profileData.imageFile.originalName
-      //     );
-      //     imageUrl = uploadResult.url;
-      //   } catch (error) {
-      //     console.error("Error uploading image:", error);
-      //     throw new Error(
-      //       `Failed to upload profile image: ${
-      //         error instanceof Error ? error.message : String(error)
-      //       }`
-      //     );
-      //   }
-      // }
-
       // Start transaction
       const result = await db.transaction(async (tx) => {
         // Create the profile (without the many-to-many fields and imageFile)
@@ -303,6 +254,8 @@ export class HealthcareService {
           .values({
             userId,
             ...profileDataWithoutManyToMany,
+            dateOfBirth: new Date(profileData.dateOfBirth), // Convert string to Date
+            gender: profileData.gender as "male" | "female", 
             image: profileData.imageUrl, // Set the uploaded image URL
           })
           .returning();
@@ -392,54 +345,6 @@ export class HealthcareService {
         }
       }
   
-      // Handle image upload if provided
-      // let imageUrl: string | undefined;
-      // if (profileData.imageFile && profileData.imageFile.buffer) {
-      //   try {
-      //     let base64String: string;
-  
-      //     if (typeof profileData.imageFile.buffer === "string") {
-      //       // Already base64 string
-      //       base64String = profileData.imageFile.buffer;
-      //     } else {
-      //       // Still serialized object, convert back to base64
-      //       const buffer = profileData.imageFile.buffer;
-      //       const values = Object.keys(buffer)
-      //         .map((key) => parseInt(key))
-      //         .filter((key) => !isNaN(key))
-      //         .sort((a, b) => a - b)
-      //         .map((key) => buffer[key]);
-  
-      //         let binaryString = '';
-      //         const chunkSize = 8192; // Process 8KB at a time
-      //         for (let i = 0; i < values.length; i += chunkSize) {
-      //           const chunk = values.slice(i, i + chunkSize);
-      //           binaryString += String.fromCharCode(...chunk);
-      //         }
-      //         base64String = btoa(binaryString);          }
-  
-      //     const fileBuffer = Buffer.from(base64String, "base64");
-  
-      //     if (fileBuffer.length === 0) {
-      //       throw new Error("Empty file buffer");
-      //     }
-  
-      //     const uploadResult = await S3Service.uploadHealthcareProfileImage(
-      //       fileBuffer,
-      //       userId,
-      //       profileData.imageFile.originalName
-      //     );
-      //     imageUrl = uploadResult.url;
-      //   } catch (error) {
-      //     console.error("Error uploading image:", error);
-      //     throw new Error(
-      //       `Failed to upload profile image: ${
-      //         error instanceof Error ? error.message : String(error)
-      //       }`
-      //     );
-      //   }
-      // }
-  
       // Start transaction
       await db.transaction(async (tx) => {
         // Update the profile (without the many-to-many fields and imageFile)
@@ -454,6 +359,13 @@ export class HealthcareService {
           ...profileDataWithoutManyToMany,
           updatedAt: new Date(),
         };
+
+        if (profileData.dateOfBirth) {
+          updateData.dateOfBirth = new Date(profileData.dateOfBirth);
+        }
+        if (profileData.gender) {
+          updateData.gender = profileData.gender as "male" | "female";
+        }
   
         // Add image URL to update data if provided
         if (profileData.imageUrl) {
