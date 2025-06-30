@@ -7,7 +7,7 @@ import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } 
 const router = Router();
 
 // Create a new job post
-router.post('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/createJob', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const jobPostData: CreateJobPostData = req.body;
