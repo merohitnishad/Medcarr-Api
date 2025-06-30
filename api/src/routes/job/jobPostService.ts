@@ -1,4 +1,4 @@
-// jobPostService.ts
+// jobPostService.ts - Clean, simplified version
 import { db } from "../../db/index.js";
 import { 
   jobPosts, 
@@ -7,8 +7,8 @@ import {
   jobPostPreferences,
 } from '../../db/schemas/jobSchema.js';
 import { users } from '../../db/schemas/usersSchema.js';
-import { careNeeds,languages,preferences  } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc } from 'drizzle-orm';
+import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
+import { eq, and, desc, count, asc, or, isNotNull } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -17,15 +17,19 @@ export interface CreateJobPostData {
   title: string;
   postcode: string;
   address: string;
+  jobDate: string; // "2025-07-13"
   startTime: string;
   endTime: string;
   shiftLength: number;
   overview: string;
   caregiverGender: 'male' | 'female';
   type: 'oneDay' | 'weekly';
-  startWeek?: Date;
-  endWeek?: Date;
-  recurringWeekday?: string[];
+  isRecurring?: boolean;
+  recurringData?: {
+    frequency: 'weekly';
+    selectedDays: string[];
+    endDate: string;
+  };
   paymentType: 'hourly' | 'fixed';
   paymentCost: number;
   careNeedIds?: string[];
@@ -45,69 +49,182 @@ export interface JobPostFilters {
 }
 
 export class JobPostService {
-  // Create a new job post with relations
+  // Create job post (single or recurring)
   static async createJobPost(userId: string, data: CreateJobPostData) {
     return await db.transaction(async (tx) => {
-      // Create the main job post
-      const [jobPost] = await tx
+      if (data.isRecurring && data.recurringData) {
+        return await this.createRecurringJobs(tx, userId, data);
+      } else {
+        return await this.createSingleJob(tx, userId, data);
+      }
+    });
+  }
+
+  // Create a single job
+  private static async createSingleJob(tx: any, userId: string, data: CreateJobPostData) {
+    const [jobPost] = await tx
+      .insert(jobPosts)
+      .values({
+        userId,
+        age: data.age,
+        relationship: data.relationship,
+        gender: data.gender,
+        title: data.title,
+        postcode: data.postcode,
+        address: data.address,
+        jobDate: new Date(data.jobDate),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        shiftLength: data.shiftLength,
+        overview: data.overview,
+        caregiverGender: data.caregiverGender,
+        type: data.type,
+        paymentType: data.paymentType,
+        paymentCost: data.paymentCost,
+        isRecurring: false,
+      })
+      .returning();
+
+    await this.addJobRelations(tx, jobPost.id, data);
+    return { job: jobPost, count: 1 };
+  }
+
+  // Create recurring jobs
+  private static async createRecurringJobs(tx: any, userId: string, data: CreateJobPostData) {
+    const { frequency, selectedDays, endDate } = data.recurringData!;
+    
+    // Create parent job (template)
+    const [parentJob] = await tx
+      .insert(jobPosts)
+      .values({
+        userId,
+        age: data.age,
+        relationship: data.relationship,
+        gender: data.gender,
+        title: data.title,
+        postcode: data.postcode,
+        address: data.address,
+        jobDate: new Date(data.jobDate),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        shiftLength: data.shiftLength,
+        overview: data.overview,
+        caregiverGender: data.caregiverGender,
+        type: data.type,
+        paymentType: data.paymentType,
+        paymentCost: data.paymentCost,
+        isRecurring: true,
+        recurringPattern: JSON.stringify({
+          frequency,
+          days: selectedDays,
+          endDate
+        }),
+      })
+      .returning();
+
+    await this.addJobRelations(tx, parentJob.id, data);
+
+    // Generate individual job instances
+    const jobInstances = this.generateRecurringJobDates(
+      new Date(data.jobDate),
+      new Date(endDate),
+      selectedDays
+    );
+
+    const createdJobs = [];
+    
+    for (const jobDate of jobInstances) {
+      const [childJob] = await tx
         .insert(jobPosts)
         .values({
           userId,
+          parentJobId: parentJob.id,
           age: data.age,
           relationship: data.relationship,
           gender: data.gender,
           title: data.title,
           postcode: data.postcode,
           address: data.address,
+          jobDate,
           startTime: data.startTime,
           endTime: data.endTime,
           shiftLength: data.shiftLength,
           overview: data.overview,
           caregiverGender: data.caregiverGender,
           type: data.type,
-          startWeek: data.startWeek,
-          endWeek: data.endWeek,
-          recurringWeekday: data.recurringWeekday,
           paymentType: data.paymentType,
           paymentCost: data.paymentCost,
+          isRecurring: false,
         })
         .returning();
 
-      // Add care needs if provided
-      if (data.careNeedIds && data.careNeedIds.length > 0) {
-        await tx.insert(jobPostCareNeeds).values(
-          data.careNeedIds.map(careNeedId => ({
-            jobPostId: jobPost.id,
-            careNeedId,
-          }))
-        );
-      }
+      await this.addJobRelations(tx, childJob.id, data);
+      createdJobs.push(childJob);
+    }
 
-      // Add languages if provided
-      if (data.languageIds && data.languageIds.length > 0) {
-        await tx.insert(jobPostLanguages).values(
-          data.languageIds.map(languageId => ({
-            jobPostId: jobPost.id,
-            languageId,
-          }))
-        );
-      }
-
-      // Add preferences if provided
-      if (data.preferenceIds && data.preferenceIds.length > 0) {
-        await tx.insert(jobPostPreferences).values(
-          data.preferenceIds.map(preferenceId => ({
-            jobPostId: jobPost.id,
-            preferenceId,
-          }))
-        );
-      }
-
-      return jobPost;
-    });
+    return { 
+      parentJob, 
+      childJobs: createdJobs, 
+      count: createdJobs.length + 1 
+    };
   }
 
-  // Get a single job post with all relations
+  // Generate recurring job dates
+  private static generateRecurringJobDates(
+    startDate: Date,
+    endDate: Date,
+    selectedDays: string[]
+  ): Date[] {
+    const dayMap: { [key: string]: number } = {
+      'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+      'thursday': 4, 'friday': 5, 'saturday': 6
+    };
+
+    const targetDays = selectedDays.map(day => dayMap[day.toLowerCase()]);
+    const dates: Date[] = [];
+    const current = new Date(startDate);
+
+    while (current <= endDate) {
+      if (targetDays.includes(current.getDay()) && current > startDate) {
+        dates.push(new Date(current));
+      }
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates;
+  }
+
+  // Helper to add job relations
+  private static async addJobRelations(tx: any, jobPostId: string, data: CreateJobPostData) {
+    if (data.careNeedIds && data.careNeedIds.length > 0) {
+      await tx.insert(jobPostCareNeeds).values(
+        data.careNeedIds.map(careNeedId => ({
+          jobPostId,
+          careNeedId,
+        }))
+      );
+    }
+
+    if (data.languageIds && data.languageIds.length > 0) {
+      await tx.insert(jobPostLanguages).values(
+        data.languageIds.map(languageId => ({
+          jobPostId,
+          languageId,
+        }))
+      );
+    }
+
+    if (data.preferenceIds && data.preferenceIds.length > 0) {
+      await tx.insert(jobPostPreferences).values(
+        data.preferenceIds.map(preferenceId => ({
+          jobPostId,
+          preferenceId,
+        }))
+      );
+    }
+  }
+
+  // Get a single job post
   static async getJobPost(jobPostId: string) {
     const result = await db.query.jobPosts.findFirst({
       where: and(
@@ -144,64 +261,42 @@ export class JobPostService {
     return result;
   }
 
-  // Get all job posts with pagination and filters
+  // Get all job posts - show all individual jobs (excluding parent templates)
   static async getAllJobPosts(filters: JobPostFilters = {}) {
     const { page = 1, limit = 10, postcode, type, paymentType, caregiverGender } = filters;
     const offset = (page - 1) * limit;
 
-    // Build where conditions
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
+      // Show single jobs and child jobs, but not parent templates
+      or(
+        eq(jobPosts.isRecurring, false),
+        and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
+      )
     ];
 
-    if (postcode) {
-      conditions.push(eq(jobPosts.postcode, postcode));
-    }
-    if (type) {
-      conditions.push(eq(jobPosts.type, type));
-    }
-    if (paymentType) {
-      conditions.push(eq(jobPosts.paymentType, paymentType));
-    }
-    if (caregiverGender) {
-      conditions.push(eq(jobPosts.caregiverGender, caregiverGender));
-    }
+    if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
+    if (type) conditions.push(eq(jobPosts.type, type));
+    if (paymentType) conditions.push(eq(jobPosts.paymentType, paymentType));
+    if (caregiverGender) conditions.push(eq(jobPosts.caregiverGender, caregiverGender));
 
-    // Get total count
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
 
-    // Get paginated results
     const results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
         user: {
-          columns: {
-            id: true,
-            name: true,
-            role: true,
-          }
+          columns: { id: true, name: true, role: true }
         },
-        careNeedsRelation: {
-          with: {
-            careNeed: true
-          }
-        },
-        languagesRelation: {
-          with: {
-            language: true
-          }
-        },
-        preferencesRelation: {
-          with: {
-            preference: true
-          }
-        }
+        careNeedsRelation: { with: { careNeed: true } },
+        languagesRelation: { with: { language: true } },
+        preferencesRelation: { with: { preference: true } }
       },
-      orderBy: [desc(jobPosts.createdAt)],
+      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
       limit,
       offset
     });
@@ -226,36 +321,27 @@ export class JobPostService {
 
     const conditions = [
       eq(jobPosts.userId, userId),
-      eq(jobPosts.isDeleted, false)
+      eq(jobPosts.isDeleted, false),
+      // Show single jobs and child jobs, but not parent templates
+      or(
+        eq(jobPosts.isRecurring, false),
+        and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
+      )
     ];
 
-    // Get total count
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
 
-    // Get paginated results
     const results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
-        careNeedsRelation: {
-          with: {
-            careNeed: true
-          }
-        },
-        languagesRelation: {
-          with: {
-            language: true
-          }
-        },
-        preferencesRelation: {
-          with: {
-            preference: true
-          }
-        }
+        careNeedsRelation: { with: { careNeed: true } },
+        languagesRelation: { with: { language: true } },
+        preferencesRelation: { with: { preference: true } }
       },
-      orderBy: [desc(jobPosts.createdAt)],
+      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
       limit,
       offset
     });
@@ -273,7 +359,7 @@ export class JobPostService {
     };
   }
 
-  // Update job post
+  // Update any job post (single, parent template, or child job) - same logic for all
   static async updateJobPost(jobPostId: string, userId: string, data: UpdateJobPostData) {
     return await db.transaction(async (tx) => {
       // Verify ownership
@@ -289,22 +375,31 @@ export class JobPostService {
         throw new Error('Job post not found or access denied');
       }
 
+      // Prepare update data with proper type conversion
+      const updateData: any = { ...data, updatedAt: new Date() };
+      
+      // Convert jobDate string to Date object if provided
+      if (data.jobDate) {
+        updateData.jobDate = new Date(data.jobDate);
+      }
+      
+      // Remove fields that shouldn't be updated directly
+      delete updateData.careNeedIds;
+      delete updateData.languageIds;
+      delete updateData.preferenceIds;
+      delete updateData.isRecurring;
+      delete updateData.recurringData;
+
       // Update main job post
       const [updatedJobPost] = await tx
         .update(jobPosts)
-        .set({
-          ...data,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(jobPosts.id, jobPostId))
         .returning();
 
       // Update relations if provided
       if (data.careNeedIds !== undefined) {
-        // Delete existing relations
         await tx.delete(jobPostCareNeeds).where(eq(jobPostCareNeeds.jobPostId, jobPostId));
-        
-        // Add new relations
         if (data.careNeedIds.length > 0) {
           await tx.insert(jobPostCareNeeds).values(
             data.careNeedIds.map(careNeedId => ({
@@ -316,10 +411,7 @@ export class JobPostService {
       }
 
       if (data.languageIds !== undefined) {
-        // Delete existing relations
         await tx.delete(jobPostLanguages).where(eq(jobPostLanguages.jobPostId, jobPostId));
-        
-        // Add new relations
         if (data.languageIds.length > 0) {
           await tx.insert(jobPostLanguages).values(
             data.languageIds.map(languageId => ({
@@ -331,10 +423,7 @@ export class JobPostService {
       }
 
       if (data.preferenceIds !== undefined) {
-        // Delete existing relations
         await tx.delete(jobPostPreferences).where(eq(jobPostPreferences.jobPostId, jobPostId));
-        
-        // Add new relations
         if (data.preferenceIds.length > 0) {
           await tx.insert(jobPostPreferences).values(
             data.preferenceIds.map(preferenceId => ({
@@ -349,7 +438,7 @@ export class JobPostService {
     });
   }
 
-  // Close job post (change status to closed)
+  // Close job post
   static async closeJobPost(jobPostId: string, userId: string) {
     const [updatedJobPost] = await db
       .update(jobPosts)
@@ -371,7 +460,7 @@ export class JobPostService {
     return updatedJobPost;
   }
 
-  // Validation helpers
+  // Validation and helper methods (keep existing ones)
   static validateJobPostData(data: Partial<CreateJobPostData>): string[] {
     const errors: string[] = [];
 
@@ -407,53 +496,40 @@ export class JobPostService {
       errors.push('End time must be after start time');
     }
 
-    if (data.type === 'weekly' && data.startWeek && data.endWeek && data.startWeek >= data.endWeek) {
-      errors.push('End week must be after start week');
-    }
-
     return errors;
   }
 
-  // Validate care need IDs
+  // Keep existing validation methods
   static async validateCareNeedIds(careNeedIds: string[]): Promise<boolean> {
     const validCareNeeds = await db
       .select({ id: careNeeds.id })
       .from(careNeeds)
-      .where(and(
-        eq(careNeeds.isDeleted, false)
-      ));
+      .where(eq(careNeeds.isDeleted, false));
 
     const validIds = validCareNeeds.map(cn => cn.id);
     return careNeedIds.every(id => validIds.includes(id));
   }
 
-  // Validate language IDs
   static async validateLanguageIds(languageIds: string[]): Promise<boolean> {
     const validLanguages = await db
       .select({ id: languages.id })
       .from(languages)
-      .where(and(
-        eq(languages.isDeleted, false)
-      ));
+      .where(eq(languages.isDeleted, false));
 
     const validIds = validLanguages.map(l => l.id);
     return languageIds.every(id => validIds.includes(id));
   }
 
-  // Validate preference IDs
   static async validatePreferenceIds(preferenceIds: string[]): Promise<boolean> {
     const validPreferences = await db
       .select({ id: preferences.id })
       .from(preferences)
-      .where(and(
-        eq(preferences.isDeleted, false)
-      ));
+      .where(eq(preferences.isDeleted, false));
 
     const validIds = validPreferences.map(p => p.id);
     return preferenceIds.every(id => validIds.includes(id));
   }
 
-  // Get available options for dropdowns
   static async getAvailableCareNeeds() {
     return await db
       .select({ id: careNeeds.id, name: careNeeds.name })
@@ -478,7 +554,6 @@ export class JobPostService {
       .orderBy(asc(preferences.name));
   }
 
-  // Check if user can access job post
   static async validateUserAccess(currentUserId: string, jobPostId: string): Promise<boolean> {
     const jobPost = await db.query.jobPosts.findFirst({
       where: and(
@@ -493,23 +568,19 @@ export class JobPostService {
     return jobPost?.userId === currentUserId;
   }
 
-  // Sanitize job post data for response
   static sanitizeJobPostData(jobPost: any) {
     const { isDeleted, ...sanitized } = jobPost;
     
-    // Transform care needs
     if (jobPost.careNeedsRelation) {
       sanitized.careNeeds = jobPost.careNeedsRelation.map((rel: any) => rel.careNeed);
       delete sanitized.careNeedsRelation;
     }
 
-    // Transform languages
     if (jobPost.languagesRelation) {
       sanitized.languages = jobPost.languagesRelation.map((rel: any) => rel.language);
       delete sanitized.languagesRelation;
     }
 
-    // Transform preferences
     if (jobPost.preferencesRelation) {
       sanitized.preferences = jobPost.preferencesRelation.map((rel: any) => rel.preference);
       delete sanitized.preferencesRelation;

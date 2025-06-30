@@ -51,15 +51,16 @@ export const jobPosts = pgTable(
     title: varchar("title", { length: 255 }).notNull(),
     postcode: varchar("postcode", { length: 20 }).notNull(),
     address: text("address").notNull(),
+    jobDate: timestamp("job_date").notNull(), // Specific date for this job
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
     shiftLength: integer("shift_length").notNull(), // in hours
     overview: text("overview").notNull(),
     caregiverGender: caregiverGenderEnum("caregiver_gender").notNull(),
     type: jobTypeEnum("type").notNull(),
-    startWeek: timestamp("start_week"),
-    endWeek: timestamp("end_week"),
-    recurringWeekday: text("recurring_weekday").array(), // ['monday', 'tuesday', etc.]
+    parentJobId: uuid("parent_job_id").references((): any => jobPosts.id, { onDelete: "cascade" }), // Links to parent job if this is a recurring instance
+    isRecurring: boolean("is_recurring").default(false).notNull(),
+    recurringPattern: text("recurring_pattern"),// JSON string: {"frequency": "weekly", "days": ["monday", "saturday"], "endDate": "2025-12-31"}
     paymentType: paymentTypeEnum("payment_type").notNull(),
     paymentCost: integer("payment_cost").notNull(), // in cents to avoid decimal issues
     isActive: boolean("is_active").default(true).notNull(),
@@ -71,7 +72,8 @@ export const jobPosts = pgTable(
     userIdIdx: index("job_posts_user_id_idx").on(table.userId),
     postcodeIdx: index("job_posts_postcode_idx").on(table.postcode),
     typeIdx: index("job_posts_type_idx").on(table.type),
-    startTimeIdx: index("job_posts_start_time_idx").on(table.startTime),
+    jobDateIdx: index("job_posts_job_date_idx").on(table.jobDate),
+    parentJobIdIdx: index("job_posts_parent_job_id_idx").on(table.parentJobId),
   })
 );
 
@@ -163,6 +165,15 @@ export const jobPostsRelations = relations(jobPosts, ({ one, many }) => ({
     fields: [jobPosts.userId],
     references: [users.id],
   }),
+  parentJob: one(jobPosts, {
+    fields: [jobPosts.parentJobId],
+    references: [jobPosts.id],
+    relationName: "recurringJobs"
+  }),
+  childJobs: many(jobPosts, {
+    relationName: "recurringJobs"
+  }),
+
   careNeedsRelation: many(jobPostCareNeeds),
   languagesRelation: many(jobPostLanguages),
   preferencesRelation: many(jobPostPreferences),

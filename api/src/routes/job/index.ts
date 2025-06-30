@@ -1,4 +1,4 @@
-// routes/user/jobPost/index.ts
+// routes/user/jobPost/index.ts - Clean, simplified version
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
 import { requireNonHealthCare } from '../../middlewares/roleAuth.js';
@@ -6,20 +6,82 @@ import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } 
 
 const router = Router();
 
-// Create a new job post
+// Create a new job post (single or recurring)
 router.post('/createJob', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const jobPostData: CreateJobPostData = req.body;
 
     // Validate required fields
-    const requiredFields = [ 'age', 'gender', 'title', 'postcode', 'address', 'startTime', 'endTime', 'shiftLength', 'overview', 'caregiverGender', 'type', 'paymentType', 'paymentCost'];
-    const missingFields = requiredFields.filter(field => !jobPostData[field as keyof CreateJobPostData]);
+    const requiredFields = [
+      'age', 'gender', 'title', 'postcode', 'address', 
+      'jobDate', 'startTime', 'endTime', 'shiftLength', 
+      'overview', 'caregiverGender', 'type', 'paymentType', 'paymentCost'
+    ];
+    
+    const missingFields = requiredFields.filter(field => 
+      !jobPostData[field as keyof CreateJobPostData]
+    );
     
     if (missingFields.length > 0) {
       res.status(400).json({ 
         success: false,
         error: `Missing required fields: ${missingFields.join(', ')}` 
+      });
+      return;
+    }
+
+    // Additional validation for recurring jobs
+    if (jobPostData.isRecurring) {
+      if (!jobPostData.recurringData) {
+        res.status(400).json({
+          success: false,
+          error: 'Recurring data is required for recurring jobs'
+        });
+        return;
+      }
+
+      const { selectedDays, endDate } = jobPostData.recurringData;
+      
+      if (!selectedDays || selectedDays.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'At least one day must be selected for recurring jobs'
+        });
+        return;
+      }
+
+      if (!endDate || new Date(endDate) <= new Date(jobPostData.jobDate)) {
+        res.status(400).json({
+          success: false,
+          error: 'End date must be after the start date'
+        });
+        return;
+      }
+
+      // Validate that job date is one of the selected days
+      const jobDate = new Date(jobPostData.jobDate);
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const jobDayName = dayNames[jobDate.getDay()];
+      
+      if (!selectedDays.includes(jobDayName)) {
+        res.status(400).json({
+          success: false,
+          error: `Job date (${jobDayName}) must be one of the selected recurring days`
+        });
+        return;
+      }
+    }
+
+    // Validate job date is in the future
+    const jobDate = new Date(jobPostData.jobDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (jobDate < today) {
+      res.status(400).json({
+        success: false,
+        error: 'Job date must be in the future'
       });
       return;
     }
@@ -71,13 +133,21 @@ router.post('/createJob', requireNonHealthCare, async (req: AuthenticatedRequest
       }
     }
 
-    const createdJobPost = await JobPostService.createJobPost(userId, jobPostData);
+    const result = await JobPostService.createJobPost(userId, jobPostData);
 
-    res.status(201).json({
-      success: true,
-      message: 'Job post created successfully',
-      data: createdJobPost
-    });
+    if (jobPostData.isRecurring) {
+      res.status(201).json({
+        success: true,
+        message: `Recurring job posts created successfully. ${result.count} jobs created.`,
+        data: result
+      });
+    } else {
+      res.status(201).json({
+        success: true,
+        message: 'Job post created successfully',
+        data: result
+      });
+    }
     return;
   } catch (error) {
     console.error('Error in create job post route:', error);
@@ -89,66 +159,35 @@ router.post('/createJob', requireNonHealthCare, async (req: AuthenticatedRequest
   }
 });
 
+// Get dropdown options for job creation
 router.get('/options', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const [careNeeds, languages, preferences] = await Promise.all([
-          JobPostService.getAvailableCareNeeds(),
-          JobPostService.getAvailableLanguages(),
-          JobPostService.getAvailablePreferences()
-      ]);
-  
-      res.json({
-        success: true,
-        data: {
-          careNeeds,
-          languages,
-          preferences
-        }
-      });
-      return;
-    } catch (error) {
-      console.error('Error fetching job options:', error);
-      res.status(500).json({ 
-        success: false,
-        error: 'Failed to fetch job options' 
-      });
-      return;
-    }
-  });
-
-// Get a specific job post by ID
-router.get('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { jobPostId } = req.params;
-    
-    const jobPost = await JobPostService.getJobPost(jobPostId);
-    
-    if (!jobPost) {
-      res.status(404).json({ 
-        success: false,
-        error: 'Job post not found' 
-      });
-      return;
-    }
-
-    const sanitizedData = JobPostService.sanitizeJobPostData(jobPost);
+    const [careNeeds, languages, preferences] = await Promise.all([
+      JobPostService.getAvailableCareNeeds(),
+      JobPostService.getAvailableLanguages(),
+      JobPostService.getAvailablePreferences()
+    ]);
 
     res.json({
       success: true,
-      data: sanitizedData
+      data: {
+        careNeeds,
+        languages,
+        preferences
+      }
     });
     return;
   } catch (error) {
-    console.error('Error in get job post route:', error);
+    console.error('Error fetching job options:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to fetch job post' 
+      error: 'Failed to fetch job options' 
     });
     return;
   }
 });
 
-// Get all job posts with pagination and filters
+// Get all job posts with pagination and filters (shows individual jobs only)
 router.get('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const filters: JobPostFilters = {
@@ -188,7 +227,7 @@ router.get('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-// Get current user's job posts
+// Get current user's job posts (shows individual jobs only)
 router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -218,7 +257,39 @@ router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, 
   }
 });
 
-// Update a job post
+// Get a specific job post by ID (single, child, or parent - all treated the same)
+router.get('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { jobPostId } = req.params;
+    
+    const jobPost = await JobPostService.getJobPost(jobPostId);
+    
+    if (!jobPost) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Job post not found' 
+      });
+      return;
+    }
+
+    const sanitizedData = JobPostService.sanitizeJobPostData(jobPost);
+
+    res.json({
+      success: true,
+      data: sanitizedData
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get job post route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch job post' 
+    });
+    return;
+  }
+});
+
+// Update ANY job post (single, child, or parent - same logic for all)
 router.put('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
@@ -243,6 +314,21 @@ router.put('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest
         details: validationErrors
       });
       return;
+    }
+
+    // Validate job date is in the future if provided
+    if (updateData.jobDate) {
+      const jobDate = new Date(updateData.jobDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (jobDate < today) {
+        res.status(400).json({
+          success: false,
+          error: 'Job date must be in the future'
+        });
+        return;
+      }
     }
 
     // Validate care need IDs if provided
@@ -306,7 +392,7 @@ router.put('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest
   }
 });
 
-// Close a job post (change status to closed)
+// Close ANY job post (single, child, or parent - same logic for all)
 router.patch('/:jobPostId/close', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
@@ -327,11 +413,44 @@ router.patch('/:jobPostId/close', requireNonHealthCare, async (req: Authenticate
         success: false,
         error: error.message 
       });
-    }
-    else {
+    } else {
       res.status(500).json({ 
         success: false,
         error: error instanceof Error ? error.message : 'Failed to close job post' 
+      });
+    }
+    return;
+  }
+});
+
+// Delete ANY job post (single, child, or parent - same logic for all)
+router.delete('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { jobPostId } = req.params;
+    const userId = req.user!.id;
+
+    // Soft delete by setting isDeleted = true
+    const deletedJobPost = await JobPostService.updateJobPost(jobPostId, userId, { 
+      isDeleted: true 
+    } as any);
+
+    res.json({
+      success: true,
+      message: 'Job post deleted successfully',
+      data: deletedJobPost
+    });
+    return;
+  } catch (error) {
+    console.error('Error in delete job post route:', error);
+    if (error instanceof Error && error.message === 'Job post not found or access denied') {
+      res.status(404).json({ 
+        success: false,
+        error: error.message 
+      });
+    } else {
+      res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete job post' 
       });
     }
     return;
