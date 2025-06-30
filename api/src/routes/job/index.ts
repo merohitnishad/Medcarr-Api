@@ -13,7 +13,7 @@ router.post('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Re
     const jobPostData: CreateJobPostData = req.body;
 
     // Validate required fields
-    const requiredFields = ['name', 'age', 'gender', 'title', 'postcode', 'address', 'startTime', 'endTime', 'shiftLength', 'overview', 'caregiverGender', 'type', 'paymentType', 'paymentCost'];
+    const requiredFields = [ 'age', 'gender', 'title', 'postcode', 'address', 'startTime', 'endTime', 'shiftLength', 'overview', 'caregiverGender', 'type', 'paymentType', 'paymentCost'];
     const missingFields = requiredFields.filter(field => !jobPostData[field as keyof CreateJobPostData]);
     
     if (missingFields.length > 0) {
