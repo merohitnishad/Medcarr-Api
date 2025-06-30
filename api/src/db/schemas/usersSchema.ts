@@ -77,6 +77,23 @@ export const healthcareProfiles = pgTable('healthcare_profiles', {
   userIdIdx: index('healthcare_profiles_user_id_idx').on(table.userId),
 }));
 
+// Bank Account Details Table (separate for GDPR compliance)
+export const healthcareBankDetails = pgTable('healthcare_bank_details', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  healthcareProfileId: uuid('healthcare_profile_id').notNull().references(() => healthcareProfiles.id, { onDelete: 'cascade' }).unique(),
+  accountName: varchar('account_name', { length: 255 }).notNull(),
+  sortCode: varchar('sort_code', { length: 8 }).notNull(), // UK sort code format: XX-XX-XX
+  accountNumber: varchar('account_number', { length: 8 }).notNull(), // UK account number: 8 digits
+  bankName: varchar('bank_name', { length: 255 }),
+  isVerified: boolean('is_verified').default(false).notNull(),
+  encryptionKeyId: varchar('encryption_key_id', { length: 255 }), // For additional encryption if needed
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  isDeleted: boolean('is_deleted').default(false).notNull(),
+}, (table) => ({
+  healthcareProfileIdIdx: index('healthcare_bank_details_profile_id_idx').on(table.healthcareProfileId),
+}));
+
 // Relations
 export const usersRelations = relations(users, ({ one }) => ({
   individualProfile: one(individualProfiles, {
@@ -140,6 +157,11 @@ export const healthcareProfilesRelations = relations(healthcareProfiles, ({ one,
   }),
   specialitiesRelation: many(healthcareProfileSpecialities),
   languagesRelation: many(healthcareProfileLanguages),
+
+  bankDetails: one(healthcareBankDetails, {
+    fields: [healthcareProfiles.id],
+    references: [healthcareBankDetails.healthcareProfileId],
+  }),
 }));
 
 // Junction table relations
@@ -184,6 +206,13 @@ export const healthcareProfileLanguagesRelations = relations(healthcareProfileLa
   language: one(languages, {
     fields: [healthcareProfileLanguages.languageId],
     references: [languages.id],
+  }),
+}));
+
+export const healthcareBankDetailsRelations = relations(healthcareBankDetails, ({ one }) => ({
+  healthcareProfile: one(healthcareProfiles, {
+    fields: [healthcareBankDetails.healthcareProfileId],
+    references: [healthcareProfiles.id],
   }),
 }));
 

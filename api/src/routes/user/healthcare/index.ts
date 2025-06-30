@@ -2,7 +2,7 @@
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../../middlewares/authMiddleware.js';
 import { healthcareOnly } from '../../../middlewares/roleAuth.js';
-import { HealthcareService, CreateHealthcareProfileData } from './healthcareService.js';
+import { HealthcareService, CreateHealthcareProfileData, CreateBankDetailsData } from './healthcareService.js';
 import { S3Service } from "../../../utils/s3UploadService.js";
 
 
@@ -414,6 +414,190 @@ router.post('/public-url', healthcareOnly, async (req: AuthenticatedRequest, res
     res.status(500).json({
       error: 'Failed to get public URL'
     });
+  }
+});
+
+router.get('/profile/bank-details', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    
+    const bankDetails = await HealthcareService.getBankDetails(userId);
+
+    res.json({
+      success: true,
+      data: bankDetails
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get bank details route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch bank details' 
+    });
+    return;
+  }
+});
+
+// Create bank details
+router.post('/profile/bank-details', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const bankData: CreateBankDetailsData = req.body;
+    
+    // Validate required fields
+    const requiredFields = ['accountName', 'sortCode', 'accountNumber'];
+    const missingFields = requiredFields.filter(field => !bankData[field as keyof CreateBankDetailsData]);
+    
+    if (missingFields.length > 0) {
+      res.status(400).json({ 
+        success: false,
+        error: `Missing required fields: ${missingFields.join(', ')}` 
+      });
+      return;
+    }
+
+    // Validate bank details
+    const validationErrors = HealthcareService.validateBankDetails(bankData);
+    if (validationErrors.length > 0) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Validation failed',
+        details: validationErrors
+      });
+      return;
+    }
+
+    const createdBankDetails = await HealthcareService.createBankDetails(userId, bankData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Bank details created successfully',
+      data: createdBankDetails
+    });
+    return;
+  } catch (error) {
+    console.error('Error in create bank details route:', error);
+    
+    if (error instanceof Error && error.message.includes('already exist')) {
+      res.status(409).json({ 
+        success: false,
+        error: error.message 
+      });
+      return;
+    }
+
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create bank details' 
+    });
+    return;
+  }
+});
+
+// Update bank details
+router.put('/profile/bank-details', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const updateData: Partial<CreateBankDetailsData> = req.body;
+    
+    // Validate input
+    if (!updateData || Object.keys(updateData).length === 0) {
+      res.status(400).json({ 
+        success: false,
+        error: 'No update data provided' 
+      });
+      return;
+    }
+
+    // Validate bank details
+    const validationErrors = HealthcareService.validateBankDetails(updateData);
+    if (validationErrors.length > 0) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Validation failed',
+        details: validationErrors
+      });
+      return;
+    }
+
+    const updatedBankDetails = await HealthcareService.updateBankDetails(userId, updateData);
+
+    res.json({
+      success: true,
+      message: 'Bank details updated successfully',
+      data: updatedBankDetails
+    });
+    return;
+  } catch (error) {
+    console.error('Error in update bank details route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update bank details' 
+    });
+    return;
+  }
+});
+
+// Delete bank details (GDPR compliance)
+router.delete('/profile/bank-details', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    
+    const deleted = await HealthcareService.deleteBankDetails(userId);
+    
+    if (!deleted) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Bank details not found' 
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Bank details deleted successfully'
+    });
+    return;
+  } catch (error) {
+    console.error('Error in delete bank details route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete bank details' 
+    });
+    return;
+  }
+});
+
+// Get complete profile with bank details (admin/special access only)
+router.get('/profile/complete-with-bank', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    
+    const userWithProfile = await HealthcareService.getCompleteProfileWithBankDetails(userId);
+    
+    if (!userWithProfile) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Profile not found' 
+      });
+      return;
+    }
+
+    // Sanitize the response (remove cognitoId)
+    const sanitizedData = HealthcareService.sanitizeCompleteUserData(userWithProfile);
+
+    res.json({
+      success: true,
+      data: sanitizedData
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get complete profile with bank route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch complete profile with bank details' 
+    });
+    return;
   }
 });
 

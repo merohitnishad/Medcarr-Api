@@ -1,6 +1,6 @@
 // routes/user/healthcare/healthcareService.ts
 import { db } from "../../../db/index.js";
-import { users, healthcareProfiles, healthcareProfileLanguages, healthcareProfileSpecialities } from "../../../db/schemas/usersSchema.js";
+import { users, healthcareProfiles, healthcareProfileLanguages, healthcareProfileSpecialities, healthcareBankDetails } from "../../../db/schemas/usersSchema.js";
 import {
   specialities,
   languages,
@@ -40,6 +40,8 @@ export interface HealthcareProfile {
   // Include related data
   specialities?: Array<{ id: string; name: string }>;
   languages?: Array<{ id: string; name: string; code?: string }>;
+  bankDetails?: BankDetails | null; // ADD THIS LINE
+
 }
 
 export interface UserWithProfile extends User {
@@ -62,6 +64,26 @@ export interface CreateHealthcareProfileData {
   experience?: number;
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
+}
+export interface BankDetails {
+  id: string;
+  healthcareProfileId: string;
+  accountName: string;
+  sortCode: string;
+  accountNumber: string;
+  bankName?: string | null;
+  isVerified: boolean;
+  encryptionKeyId?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  isDeleted: boolean;
+}
+
+export interface CreateBankDetailsData {
+  accountName: string;
+  sortCode: string;
+  accountNumber: string;
+  bankName?: string;
 }
 
 export class HealthcareService {
@@ -729,4 +751,197 @@ export class HealthcareService {
 
     return errors;
   }
+
+    // Get bank details (separate method for security)
+    static async getBankDetails(userId: string): Promise<BankDetails | null> {
+      try {
+        const userWithProfile = await this.getCompleteProfile(userId);
+        if (!userWithProfile?.healthcareProfile) {
+          throw new Error("Healthcare profile not found");
+        }
+  
+        const result = await db.query.healthcareBankDetails.findFirst({
+          where: and(
+            eq(healthcareBankDetails.healthcareProfileId, userWithProfile.healthcareProfile.id),
+            eq(healthcareBankDetails.isDeleted, false)
+          ),
+        });
+  
+        return result || null;
+      } catch (error) {
+        console.error("Error fetching bank details:", error);
+        throw new Error("Failed to fetch bank details");
+      }
+    }
+  
+    // Create bank details
+    static async createBankDetails(
+      userId: string,
+      bankData: CreateBankDetailsData
+    ): Promise<BankDetails> {
+      try {
+        const userWithProfile = await this.getCompleteProfile(userId);
+        if (!userWithProfile?.healthcareProfile) {
+          throw new Error("Healthcare profile not found");
+        }
+  
+        // Check if bank details already exist
+        const existingBankDetails = await this.getBankDetails(userId);
+        if (existingBankDetails) {
+          throw new Error("Bank details already exist. Use update method instead.");
+        }
+  
+        // Validate bank details
+        const validationErrors = this.validateBankDetails(bankData);
+        if (validationErrors.length > 0) {
+          throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
+        }
+  
+        const [createdBankDetails] = await db
+          .insert(healthcareBankDetails)
+          .values({
+            healthcareProfileId: userWithProfile.healthcareProfile.id,
+            ...bankData,
+          })
+          .returning();
+  
+        return createdBankDetails;
+      } catch (error) {
+        console.error("Error creating bank details:", error);
+        throw new Error(
+          error instanceof Error ? error.message : "Failed to create bank details"
+        );
+      }
+    }
+  
+    // Update bank details
+    static async updateBankDetails(
+      userId: string,
+      bankData: Partial<CreateBankDetailsData>
+    ): Promise<BankDetails> {
+      try {
+        const existingBankDetails = await this.getBankDetails(userId);
+        if (!existingBankDetails) {
+          throw new Error("Bank details not found");
+        }
+  
+        // Validate bank details
+        const validationErrors = this.validateBankDetails(bankData);
+        if (validationErrors.length > 0) {
+          throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
+        }
+  
+        const [updatedBankDetails] = await db
+          .update(healthcareBankDetails)
+          .set({
+            ...bankData,
+            updatedAt: new Date(),
+          })
+          .where(eq(healthcareBankDetails.id, existingBankDetails.id))
+          .returning();
+  
+        return updatedBankDetails;
+      } catch (error) {
+        console.error("Error updating bank details:", error);
+        throw new Error(
+          error instanceof Error ? error.message : "Failed to update bank details"
+        );
+      }
+    }
+  
+    // Delete bank details (GDPR compliance)
+    static async deleteBankDetails(userId: string): Promise<boolean> {
+      try {
+        const existingBankDetails = await this.getBankDetails(userId);
+        if (!existingBankDetails) {
+          return false;
+        }
+  
+        await db
+          .update(healthcareBankDetails)
+          .set({
+            isDeleted: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(healthcareBankDetails.id, existingBankDetails.id));
+  
+        return true;
+      } catch (error) {
+        console.error("Error deleting bank details:", error);
+        throw new Error("Failed to delete bank details");
+      }
+    }
+  
+    // Validate bank details
+    static validateBankDetails(data: Partial<CreateBankDetailsData>): string[] {
+      const errors: string[] = [];
+  
+      if (data.accountName !== undefined) {
+        if (!data.accountName || data.accountName.trim().length < 2) {
+          errors.push("Account name must be at least 2 characters long");
+        }
+      }
+  
+      if (data.sortCode !== undefined) {
+        if (!data.sortCode) {
+          errors.push("Sort code is required");
+        } else {
+          // UK sort code validation (XX-XX-XX format, 6 digits)
+          const sortCodePattern = /^\d{2}-\d{2}-\d{2}$/;
+          const cleanSortCode = data.sortCode.replace(/\D/g, '');
+          
+          if (cleanSortCode.length !== 6) {
+            errors.push("Sort code must be 6 digits");
+          } else if (!sortCodePattern.test(data.sortCode) && data.sortCode.length !== 6) {
+            errors.push("Sort code must be in XX-XX-XX format or 6 digits");
+          }
+        }
+      }
+  
+      if (data.accountNumber !== undefined) {
+        if (!data.accountNumber) {
+          errors.push("Account number is required");
+        } else {
+          // UK account number validation (8 digits)
+          const cleanAccountNumber = data.accountNumber.replace(/\D/g, '');
+          if (cleanAccountNumber.length !== 8) {
+            errors.push("Account number must be exactly 8 digits");
+          }
+        }
+      }
+  
+      if (data.bankName !== undefined && data.bankName) {
+        if (data.bankName.trim().length < 2) {
+          errors.push("Bank name must be at least 2 characters long");
+        }
+      }
+  
+      return errors;
+    }
+  
+    // Update getCompleteProfile to include bank details when specifically requested
+    static async getCompleteProfileWithBankDetails(
+      userId: string
+    ): Promise<UserWithProfile | null> {
+      try {
+        const userWithProfile = await this.getCompleteProfile(userId);
+        if (!userWithProfile?.healthcareProfile) {
+          return userWithProfile;
+        }
+  
+        const bankDetails = await this.getBankDetails(userId);
+        
+        return {
+          ...userWithProfile,
+          healthcareProfile: {
+            ...userWithProfile.healthcareProfile,
+            bankDetails,
+          },
+        };
+      } catch (error) {
+        console.error("Error fetching complete profile with bank details:", error);
+        throw new Error("Failed to fetch complete profile with bank details");
+      }
+    }
+  
 }
