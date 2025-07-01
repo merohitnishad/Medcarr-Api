@@ -1,7 +1,7 @@
 // routes/user/jobPost/index.ts - Clean, simplified version
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
-import { requireNonHealthCare } from '../../middlewares/roleAuth.js';
+import { requireNonHealthCare, requireHealthcareRole } from '../../middlewares/roleAuth.js';
 import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } from './jobPostService.js';
 
 const router = Router();
@@ -188,7 +188,7 @@ router.get('/options', requireNonHealthCare, async (req: AuthenticatedRequest, r
 });
 
 // Get all job posts with pagination and filters (shows individual jobs only)
-router.get('/', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const filters: JobPostFilters = {
       page: req.query.page ? parseInt(req.query.page as string) : 1,
