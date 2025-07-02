@@ -323,10 +323,10 @@ export class JobPostService {
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
       // Show single jobs and child jobs, but not parent templates
-      or(
-        eq(jobPosts.isRecurring, false),
-        and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
-      )
+      // or(
+      //   eq(jobPosts.isRecurring, false),
+      //   and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
+      // )
     ];
 
     if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
@@ -376,10 +376,10 @@ export class JobPostService {
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
       // Show single jobs and child jobs, but not parent templates
-      or(
-        eq(jobPosts.isRecurring, false),
-        and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
-      )
+      // or(
+      //   eq(jobPosts.isRecurring, false),
+      //   and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
+      // )
     ];
 
     const [totalCount] = await db
