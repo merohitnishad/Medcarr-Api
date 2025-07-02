@@ -1,8 +1,13 @@
 // routes/user/jobPost/index.ts - Clean, simplified version
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
-import { requireNonHealthCare, requireHealthcareRole } from '../../middlewares/roleAuth.js';
+import { requireNonHealthCare, requireHealthcareRole, requireOrganizationRole } from '../../middlewares/roleAuth.js';
 import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } from './jobPostService.js';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
+
+
 
 const router = Router();
 
@@ -453,6 +458,359 @@ router.delete('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequ
         error: error instanceof Error ? error.message : 'Failed to delete job post' 
       });
     }
+    return;
+  }
+});
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/csv'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || file.originalname.endsWith('.csv') || file.originalname.endsWith('.xlsx')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV and Excel files are allowed'));
+    }
+  }
+});
+
+// Parse bulk job file and validate data
+router.post('/bulk/parse', requireOrganizationRole, upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        error: 'No file uploaded'
+      });
+      return;
+    }
+
+    const file = req.file;
+    let jsonData: any[] = [];
+
+    try {
+      // Parse based on file type
+      if (file.mimetype.includes('csv') || file.originalname.endsWith('.csv')) {
+        // Parse CSV
+        const csvText = file.buffer.toString('utf-8');
+        const parsed = Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (header) => header.trim()
+        });
+
+        if (parsed.errors.length > 0) {
+          res.status(400).json({
+            success: false,
+            error: 'CSV parsing error',
+            details: parsed.errors
+          });
+          return;
+        }
+
+        jsonData = parsed.data;
+      } else {
+        // Parse Excel
+        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        
+        if (!sheetName) {
+          res.status(400).json({
+            success: false,
+            error: 'No sheets found in Excel file'
+          });
+          return;
+        }
+
+        const worksheet = workbook.Sheets[sheetName];
+        jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      }
+
+      if (jsonData.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'No data found in file'
+        });
+        return;
+      }
+
+      if (jsonData.length > 100) {
+        res.status(400).json({
+          success: false,
+          error: 'Maximum 100 jobs allowed per bulk upload'
+        });
+        return;
+      }
+
+      // Validate and parse the data
+      const validationResult = await JobPostService.parseBulkJobData(jsonData);
+
+      res.json({
+        success: true,
+        message: 'File parsed successfully',
+        data: {
+          fileName: file.originalname,
+          fileSize: file.size,
+          ...validationResult
+        }
+      });
+      return;
+
+    } catch (parseError) {
+      console.error('File parsing error:', parseError);
+      res.status(400).json({
+        success: false,
+        error: 'Failed to parse file',
+        details: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
+      });
+      return;
+    }
+
+  } catch (error) {
+    console.error('Error in bulk parse route:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to process file'
+    });
+    return;
+  }
+});
+
+// Create bulk jobs from validated data
+router.post('/bulk/create', requireOrganizationRole, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { validJobs } = req.body;
+
+    if (!validJobs || !Array.isArray(validJobs) || validJobs.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'No valid job data provided'
+      });
+      return;
+    }
+
+    if (validJobs.length > 100) {
+      res.status(400).json({
+        success: false,
+        error: 'Maximum 100 jobs allowed per bulk upload'
+      });
+      return;
+    }
+
+    // Create bulk jobs
+    const result = await JobPostService.createBulkJobs(userId, validJobs);
+
+    res.json({
+      success: true,
+      message: `Bulk job creation completed. ${result.summary.successfulJobs} jobs created successfully.`,
+      data: result
+    });
+    return;
+
+  } catch (error) {
+    console.error('Error in bulk create route:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create bulk jobs'
+    });
+    return;
+  }
+});
+
+// Get bulk job template
+router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = req.query.format as string || 'csv';
+
+    // Get available options for reference
+    const [careNeeds, languages, preferences] = await Promise.all([
+      JobPostService.getAvailableCareNeeds(),
+      JobPostService.getAvailableLanguages(),
+      JobPostService.getAvailablePreferences()
+    ]);
+
+    // Sample data with all required fields
+    const sampleData = [
+      {
+        age: 75,
+        relationship: 'Mother',
+        gender: 'female',
+        title: 'Daily Care for Elderly Mother',
+        postcode: 'SW1A 1AA',
+        address: '123 Main Street, London',
+        jobDate: '2025-07-15',
+        startTime: '09:00',
+        endTime: '17:00',
+        shiftLength: 8,
+        overview: 'Looking for a caring and experienced caregiver to help with daily activities for my elderly mother. She needs assistance with personal care, meal preparation, and companionship.',
+        caregiverGender: 'female',
+        type: 'oneDay',
+        paymentType: 'hourly',
+        paymentCost: 2000, // in cents
+        careNeeds: 'Personal Care,Companionship',
+        languages: 'English',
+        preferences: 'Non-smoker,Pet-friendly'
+      },
+      {
+        age: 82,
+        relationship: 'Father',
+        gender: 'male',
+        title: 'Weekly Care for Father with Dementia',
+        postcode: 'M1 1AA',
+        address: '456 Oak Avenue, Manchester',
+        jobDate: '2025-07-20',
+        startTime: '10:00',
+        endTime: '14:00',
+        shiftLength: 4,
+        overview: 'Seeking a patient and understanding caregiver for my father who has early-stage dementia. Need help with medication reminders, light housekeeping, and social interaction.',
+        caregiverGender: 'male',
+        type: 'oneDay',
+        paymentType: 'fixed',
+        paymentCost: 8000, // in cents
+        careNeeds: 'Dementia Care,Medication Management',
+        languages: 'English,Spanish',
+        preferences: 'Non-smoker'
+      }
+    ];
+
+    if (format === 'xlsx') {
+      // Create Excel file
+      const workbook = XLSX.utils.book_new();
+      
+      // Create sample data sheet
+      const sampleSheet = XLSX.utils.json_to_sheet(sampleData);
+      XLSX.utils.book_append_sheet(workbook, sampleSheet, 'Sample Jobs');
+      
+            // Create comprehensive reference sheet with all options
+            const referenceData = [
+              { category: 'RELATIONSHIP OPTIONS', value: '', description: 'Choose from the following relationship options:' },
+              { category: '', value: 'Mother', description: 'Care for my mother' },
+              { category: '', value: 'Father', description: 'Care for my father' },
+              { category: '', value: 'Myself', description: 'Care for myself' },
+              { category: '', value: 'Grandmother', description: 'Care for my grandmother' },
+              { category: '', value: 'Grandfather', description: 'Care for my grandfather' },
+              { category: '', value: 'Spouse', description: 'Care for my spouse/partner' },
+              { category: '', value: 'Other', description: 'Other family member or friend' },
+              
+              { category: 'GENDER OPTIONS', value: '', description: 'Choose from the following gender options:' },
+              { category: '', value: 'male', description: 'Male' },
+              { category: '', value: 'female', description: 'Female' },
+              
+              { category: 'PAYMENT TYPE OPTIONS', value: '', description: 'Choose from the following payment types:' },
+              { category: '', value: 'hourly', description: 'Pay per hour worked' },
+              { category: '', value: 'fixed', description: 'Fixed amount for the entire job' },
+              
+              { category: 'AVAILABLE CARE NEEDS', value: '', description: 'Use these exact names, comma-separated:' },
+              ...careNeeds.map(cn => ({ category: '', value: cn.name, description: `ID: ${cn.id}` })),
+              { category: '', value: '', description: '' },
+              
+              { category: 'AVAILABLE LANGUAGES', value: '', description: 'Use these exact names, comma-separated:' },
+              ...languages.map(l => ({ category: '', value: l.name, description: `ID: ${l.id}` })),
+              { category: '', value: '', description: '' },
+              
+              { category: 'AVAILABLE PREFERENCES', value: '', description: 'Use these exact names, comma-separated:' },
+              ...preferences.map(p => ({ category: '', value: p.name, description: `ID: ${p.id}` })),
+              { category: '', value: '', description: '' },
+            ];
+      
+      const referenceSheet = XLSX.utils.json_to_sheet(referenceData);
+      XLSX.utils.book_append_sheet(workbook, referenceSheet, 'Reference Guide');
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=bulk_job_template.xlsx');
+      res.send(buffer);
+      return;
+    } else {
+      // Create CSV with helpful header comments
+      const csvHeader = [
+        '# Bulk Job Upload Template',
+        '# Field Descriptions:',
+        '# age: Age of person receiving care (0-120, required)',
+        '# relationship: Your relationship (Mother, Father, Myself, Grandmother, Grandfather, Spouse, Other)',
+        '# gender: Gender of person receiving care (male, female, required)',
+        '# title: Job title/summary (minimum 5 characters, required)',
+        '# postcode: Postcode where care needed (required)',
+        '# address: Full address (minimum 10 characters, required)',
+        '# jobDate: Date needed (YYYY-MM-DD format, future dates only, required)',
+        '# startTime: Start time (HH:MM 24-hour format, required)',
+        '# endTime: End time (HH:MM 24-hour format, required)',
+        '# shiftLength: Duration in hours (1-24, must match start/end time, required)',
+        '# overview: Detailed description (minimum 20 characters, required)',
+        '# caregiverGender: Preferred caregiver gender (male, female, required)',
+        '# type: Always "oneDay" for bulk uploads (required)',
+        '# paymentType: hourly or fixed (required)',
+        '# paymentCost: Amount in pence - £20.00 = 2000 (required)',
+        '# careNeeds: Comma-separated care needs (optional)',
+        '# languages: Comma-separated languages (optional)',
+        '# preferences: Comma-separated preferences (optional)',
+        '#',
+        '# Example relationships: Mother, Father, Myself, Grandmother, Grandfather, Spouse, Other',
+        '# Example care needs: Personal Care, Companionship, Dementia Care, Medication Management',
+        '# Example languages: English, Spanish, French, German',
+        '# Example preferences: Non-smoker, Pet-friendly, Experience with seniors',
+        '#'
+      ].join('\n') + '\n';
+      
+      const csv = Papa.unparse(sampleData);
+      const csvWithHeader = csvHeader + csv;
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=bulk_job_template.csv');
+      res.send(csvWithHeader);
+      return;
+    }
+
+  } catch (error) {
+    console.error('Error generating template:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate template'
+    });
+    return;
+  }
+});
+
+// Get available options for bulk job creation (care needs, languages, preferences)
+router.get('/bulk/options', requireOrganizationRole, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [careNeeds, languages, preferences] = await Promise.all([
+      JobPostService.getAvailableCareNeeds(),
+      JobPostService.getAvailableLanguages(),
+      JobPostService.getAvailablePreferences()
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        careNeeds: careNeeds.map(cn => cn.name),
+        languages: languages.map(l => l.name),
+        preferences: preferences.map(p => p.name),
+        genderOptions: ['male', 'female'],
+        jobTypeOptions: ['oneDay', 'weekly'],
+        paymentTypeOptions: ['hourly', 'fixed']
+      }
+    });
+    return;
+
+  } catch (error) {
+    console.error('Error fetching bulk options:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch options'
+    });
     return;
   }
 });

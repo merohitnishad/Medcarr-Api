@@ -48,6 +48,59 @@ export interface JobPostFilters {
   caregiverGender?: 'male' | 'female';
 }
 
+export interface BulkJobData {
+  age: number;
+  relationship?: string;
+  gender: 'male' | 'female';
+  title: string;
+  postcode: string;
+  address: string;
+  jobDate: string;
+  startTime: string;
+  endTime: string;
+  shiftLength: number;
+  overview: string;
+  caregiverGender: 'male' | 'female';
+  paymentType: 'hourly' | 'fixed';
+  paymentCost: number;
+  careNeeds?: string; // Comma-separated care need names
+  languages?: string; // Comma-separated language names
+  preferences?: string; // Comma-separated preference names
+  rowNumber?: number; // For tracking which row this came from
+}
+
+export interface BulkJobValidationResult {
+  valid: BulkJobData[];
+  invalid: Array<{
+    row: number;
+    data: Partial<BulkJobData>;
+    errors: string[];
+  }>;
+  summary: {
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+  };
+}
+
+export interface BulkJobCreateResult {
+  successful: Array<{
+    row: number;
+    jobId: string;
+    title: string;
+  }>;
+  failed: Array<{
+    row: number;
+    data: BulkJobData;
+    error: string;
+  }>;
+  summary: {
+    totalJobs: number;
+    successfulJobs: number;
+    failedJobs: number;
+  };
+}
+
 export class JobPostService {
   // Create job post (single or recurring)
   static async createJobPost(userId: string, data: CreateJobPostData) {
@@ -587,5 +640,318 @@ export class JobPostService {
     }
 
     return sanitized;
+  }
+
+    // Parse and validate bulk job data
+  static async parseBulkJobData(fileData: any[]): Promise<BulkJobValidationResult> {
+    const valid: BulkJobData[] = [];
+    const invalid: Array<{ row: number; data: Partial<BulkJobData>; errors: string[] }> = [];
+
+    // Get all available options for validation
+    const [availableCareNeeds, availableLanguages, availablePreferences] = await Promise.all([
+      this.getAvailableCareNeeds(),
+      this.getAvailableLanguages(),
+      this.getAvailablePreferences()
+    ]);
+
+    const careNeedMap = new Map(availableCareNeeds.map(cn => [cn.name.toLowerCase(), cn.id]));
+    const languageMap = new Map(availableLanguages.map(l => [l.name.toLowerCase(), l.id]));
+    const preferenceMap = new Map(availablePreferences.map(p => [p.name.toLowerCase(), p.id]));
+
+    for (let i = 0; i < fileData.length; i++) {
+      const row = fileData[i];
+      const rowNumber = i + 2; // +2 because arrays are 0-indexed and we skip header
+      const errors: string[] = [];
+
+      // Parse the row data
+      const jobData: Partial<BulkJobData> = {
+        age: this.parseNumber(row.age),
+        relationship: this.parseString(row.relationship),
+        gender: this.parseGender(row.gender),
+        title: this.parseString(row.title),
+        postcode: this.parseString(row.postcode),
+        address: this.parseString(row.address),
+        jobDate: this.parseDate(row.jobDate || row.job_date),
+        startTime: this.parseTime(row.startTime || row.start_time),
+        endTime: this.parseTime(row.endTime || row.end_time),
+        shiftLength: this.parseNumber(row.shiftLength || row.shift_length),
+        overview: this.parseString(row.overview),
+        caregiverGender: this.parseGender(row.caregiverGender || row.caregiver_gender),
+        paymentType: this.parsePaymentType(row.paymentType || row.payment_type),
+        paymentCost: this.parseNumber(row.paymentCost || row.payment_cost),
+        careNeeds: this.parseString(row.careNeeds || row.care_needs),
+        languages: this.parseString(row.languages),
+        preferences: this.parseString(row.preferences),
+        rowNumber
+      };
+
+      // Validate required fields
+      if (!jobData.age) errors.push('Age is required');
+      if (!jobData.gender) errors.push('Gender is required');
+      if (!jobData.title) errors.push('Title is required');
+      if (!jobData.postcode) errors.push('Postcode is required');
+      if (!jobData.address) errors.push('Address is required');
+      if (!jobData.jobDate) errors.push('Job date is required');
+      if (!jobData.startTime) errors.push('Start time is required');
+      if (!jobData.endTime) errors.push('End time is required');
+      if (!jobData.shiftLength) errors.push('Shift length is required');
+      if (!jobData.overview) errors.push('Overview is required');
+      if (!jobData.caregiverGender) errors.push('Caregiver gender is required');
+      if (!jobData.paymentType) errors.push('Payment type is required');
+      if (!jobData.paymentCost) errors.push('Payment cost is required');
+
+      // Validate data quality
+      if (jobData.age && (jobData.age < 0 || jobData.age > 120)) {
+        errors.push('Age must be between 0 and 120');
+      }
+
+      if (jobData.title && jobData.title.trim().length < 5) {
+        errors.push('Title must be at least 5 characters long');
+      }
+
+      if (jobData.overview && jobData.overview.trim().length < 20) {
+        errors.push('Overview must be at least 20 characters long');
+      }
+
+      if (jobData.shiftLength && (jobData.shiftLength < 1 || jobData.shiftLength > 24)) {
+        errors.push('Shift length must be between 1 and 24 hours');
+      }
+
+      if (jobData.paymentCost && jobData.paymentCost < 0) {
+        errors.push('Payment cost must be positive');
+      }
+
+      // Validate job date is in future
+      if (jobData.jobDate) {
+        const jobDate = new Date(jobData.jobDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (jobDate < today) {
+          errors.push('Job date must be in the future');
+        }
+      }
+
+      // Validate recurring job data
+      if (jobData.startTime && jobData.endTime && jobData.startTime >= jobData.endTime) {
+        errors.push('End time must be after start time');
+      }
+
+      // Validate and convert care needs, languages, preferences
+      if (jobData.careNeeds) {
+        const careNeedNames = jobData.careNeeds.split(',').map(name => name.trim().toLowerCase());
+        const invalidCareNeeds = careNeedNames.filter(name => !careNeedMap.has(name));
+        if (invalidCareNeeds.length > 0) {
+          errors.push(`Invalid care needs: ${invalidCareNeeds.join(', ')}`);
+        }
+      }
+
+      if (jobData.languages) {
+        const languageNames = jobData.languages.split(',').map(name => name.trim().toLowerCase());
+        const invalidLanguages = languageNames.filter(name => !languageMap.has(name));
+        if (invalidLanguages.length > 0) {
+          errors.push(`Invalid languages: ${invalidLanguages.join(', ')}`);
+        }
+      }
+
+      if (jobData.preferences) {
+        const preferenceNames = jobData.preferences.split(',').map(name => name.trim().toLowerCase());
+        const invalidPreferences = preferenceNames.filter(name => !preferenceMap.has(name));
+        if (invalidPreferences.length > 0) {
+          errors.push(`Invalid preferences: ${invalidPreferences.join(', ')}`);
+        }
+      }
+
+      if (errors.length === 0) {
+        valid.push(jobData as BulkJobData);
+      } else {
+        invalid.push({ row: rowNumber, data: jobData, errors });
+      }
+    }
+
+    return {
+      valid,
+      invalid,
+      summary: {
+        totalRows: fileData.length,
+        validRows: valid.length,
+        invalidRows: invalid.length
+      }
+    };
+  }
+
+  // Create bulk jobs using existing createJobPost method
+  static async createBulkJobs(userId: string, validJobData: BulkJobData[]): Promise<BulkJobCreateResult> {
+    const successful: Array<{ row: number; jobId: string; title: string }> = [];
+    const failed: Array<{ row: number; data: BulkJobData; error: string }> = [];
+
+    // Get mapping data once
+    const [availableCareNeeds, availableLanguages, availablePreferences] = await Promise.all([
+      this.getAvailableCareNeeds(),
+      this.getAvailableLanguages(),
+      this.getAvailablePreferences()
+    ]);
+
+    const careNeedMap = new Map(availableCareNeeds.map(cn => [cn.name.toLowerCase(), cn.id]));
+    const languageMap = new Map(availableLanguages.map(l => [l.name.toLowerCase(), l.id]));
+    const preferenceMap = new Map(availablePreferences.map(p => [p.name.toLowerCase(), p.id]));
+
+    for (const jobData of validJobData) {
+      try {
+        // Convert bulk job data to create job data format
+        const createJobData: CreateJobPostData = {
+          age: jobData.age,
+          relationship: jobData.relationship,
+          gender: jobData.gender,
+          title: jobData.title,
+          postcode: jobData.postcode,
+          address: jobData.address,
+          jobDate: jobData.jobDate,
+          startTime: jobData.startTime,
+          endTime: jobData.endTime,
+          shiftLength: jobData.shiftLength,
+          overview: jobData.overview,
+          caregiverGender: jobData.caregiverGender,
+          type: 'oneDay',
+          paymentType: jobData.paymentType,
+          paymentCost: jobData.paymentCost,
+          isRecurring: false, // Bulk jobs are always single jobs
+        };
+
+        // Convert care needs, languages, preferences to IDs
+        if (jobData.careNeeds) {
+          const careNeedNames = jobData.careNeeds.split(',').map(name => name.trim().toLowerCase());
+          createJobData.careNeedIds = careNeedNames
+            .map(name => careNeedMap.get(name))
+            .filter(id => id) as string[];
+        }
+
+        if (jobData.languages) {
+          const languageNames = jobData.languages.split(',').map(name => name.trim().toLowerCase());
+          createJobData.languageIds = languageNames
+            .map(name => languageMap.get(name))
+            .filter(id => id) as string[];
+        }
+
+        if (jobData.preferences) {
+          const preferenceNames = jobData.preferences.split(',').map(name => name.trim().toLowerCase());
+          createJobData.preferenceIds = preferenceNames
+            .map(name => preferenceMap.get(name))
+            .filter(id => id) as string[];
+        }
+
+        // Use existing createJobPost method for single job creation
+        const result = await this.createJobPost(userId, createJobData);
+        // Handle different return structures from createJobPost
+        let jobId = '';
+        if ('job' in result && result.job) {
+          jobId = result.job.id;
+        } else if ('parentJob' in result && result.parentJob) {
+          jobId = result.parentJob.id;
+        }
+        
+        successful.push({
+          row: jobData.rowNumber || 0,
+          jobId: jobId,
+          title: jobData.title
+        });
+
+
+      } catch (error) {
+        failed.push({
+          row: jobData.rowNumber || 0,
+          data: jobData,
+          error: error instanceof Error ? error.message : 'Unknown error occurred'
+        });
+      }
+    }
+
+    return {
+      successful,
+      failed,
+      summary: {
+        totalJobs: validJobData.length,
+        successfulJobs: successful.length,
+        failedJobs: failed.length
+      }
+    };
+  }
+
+  // Helper parsing methods
+  private static parseString(value: any): string | undefined {
+    if (value === null || value === undefined || value === '') return undefined;
+    return String(value).trim();
+  }
+
+  private static parseNumber(value: any): number | undefined {
+    if (value === null || value === undefined || value === '') return undefined;
+    const num = Number(value);
+    return isNaN(num) ? undefined : num;
+  }
+
+  private static parseBoolean(value: any): boolean {
+    if (value === null || value === undefined || value === '') return false;
+    if (typeof value === 'boolean') return value;
+    const str = String(value).toLowerCase();
+    return str === 'true' || str === 'yes' || str === '1';
+  }
+
+  private static parseGender(value: any): 'male' | 'female' | undefined {
+    if (!value) return undefined;
+    const gender = String(value).toLowerCase().trim();
+    if (gender === 'male' || gender === 'm') return 'male';
+    if (gender === 'female' || gender === 'f') return 'female';
+    return undefined;
+  }
+
+  private static parseJobType(value: any): 'oneDay' | undefined {
+    if (!value) return undefined;
+    const type = String(value).toLowerCase().trim();
+    if (type === 'oneday' || type === 'one-day' || type === 'one day') return 'oneDay';
+    return undefined;
+  }
+
+  private static parsePaymentType(value: any): 'hourly' | 'fixed' | undefined {
+    if (!value) return undefined;
+    const type = String(value).toLowerCase().trim();
+    if (type === 'hourly') return 'hourly';
+    if (type === 'fixed') return 'fixed';
+    return undefined;
+  }
+
+  private static parseDate(value: any): string | undefined {
+    if (!value) return undefined;
+    try {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return undefined;
+      return date.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+    } catch {
+      return undefined;
+    }
+  }
+
+  private static parseTime(value: any): string | undefined {
+    if (!value) return undefined;
+    const timeStr = String(value).trim();
+    
+    // Handle different time formats
+    const timeRegex = /^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i;
+    const match = timeStr.match(timeRegex);
+    
+    if (!match) return undefined;
+    
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const ampm = match[4];
+    
+    if (minutes >= 60) return undefined;
+    
+    if (ampm) {
+      if (ampm.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+      if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+    }
+    
+    if (hours >= 24) return undefined;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   }
 }
