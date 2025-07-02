@@ -761,7 +761,10 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
         '# Example care needs: Personal Care, Companionship, Dementia Care, Medication Management',
         '# Example languages: English, Spanish, French, German',
         '# Example preferences: Non-smoker, Pet-friendly, Experience with seniors',
-        '#'
+        '#',
+        '# Below is an example. Make sure to add your jobs according to this format.',
+        '# Do NOT include these header comment lines when uploading your file.',
+        '# '
       ].join('\n') + '\n';
       
       const csv = Papa.unparse(sampleData);
