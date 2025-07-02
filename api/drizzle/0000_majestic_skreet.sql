@@ -29,6 +29,12 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
+ CREATE TYPE "public"."relationship" AS ENUM('Myself', 'Mother', 'Father', 'Grandmother', 'Grandfather', 'Spouse', 'Friend', 'Other');
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
  CREATE TYPE "public"."role" AS ENUM('admin', 'individual', 'organization', 'healthcare');
 EXCEPTION
  WHEN duplicate_object THEN null;
@@ -58,23 +64,23 @@ CREATE TABLE IF NOT EXISTS "job_post_preferences" (
 CREATE TABLE IF NOT EXISTS "job_posts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
-	"name" varchar(255) NOT NULL,
 	"age" integer NOT NULL,
 	"status" "job_status" DEFAULT 'open' NOT NULL,
-	"relationship" varchar(100),
+	"relationship" "relationship" NOT NULL,
 	"gender" "gender" NOT NULL,
 	"title" varchar(255) NOT NULL,
 	"postcode" varchar(20) NOT NULL,
 	"address" text NOT NULL,
-	"start_time" timestamp NOT NULL,
-	"end_time" timestamp NOT NULL,
+	"job_date" timestamp NOT NULL,
+	"start_time" time NOT NULL,
+	"end_time" time NOT NULL,
 	"shift_length" integer NOT NULL,
 	"overview" text NOT NULL,
 	"caregiver_gender" "caregiver_gender" NOT NULL,
 	"type" "job_type" NOT NULL,
-	"start_week" timestamp,
-	"end_week" timestamp,
-	"recurring_weekday" text[],
+	"parent_job_id" uuid,
+	"is_recurring" boolean DEFAULT false NOT NULL,
+	"recurring_pattern" text,
 	"payment_type" "payment_type" NOT NULL,
 	"payment_cost" integer NOT NULL,
 	"is_active" boolean DEFAULT true NOT NULL,
@@ -91,6 +97,21 @@ CREATE TABLE IF NOT EXISTS "products" (
 	"price" double precision NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "healthcare_bank_details" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"healthcare_profile_id" uuid NOT NULL,
+	"account_name" varchar(255) NOT NULL,
+	"sort_code" varchar(8) NOT NULL,
+	"account_number" varchar(8) NOT NULL,
+	"bank_name" varchar(255),
+	"is_verified" boolean DEFAULT false NOT NULL,
+	"encryption_key_id" varchar(255),
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"is_deleted" boolean DEFAULT false NOT NULL,
+	CONSTRAINT "healthcare_bank_details_healthcare_profile_id_unique" UNIQUE("healthcare_profile_id")
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "healthcare_profile_languages" (
 	"healthcare_profile_id" uuid NOT NULL,
 	"language_id" uuid NOT NULL
@@ -105,8 +126,11 @@ CREATE TABLE IF NOT EXISTS "healthcare_profiles" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"full_name" varchar(255) NOT NULL,
+	"date_of_birth" date NOT NULL,
+	"gender" "gender" NOT NULL,
 	"professional_title" varchar(255) NOT NULL,
 	"image_url" varchar(500),
+	"nationality" varchar(100) NOT NULL,
 	"postcode" varchar(20) NOT NULL,
 	"phone_number" varchar(20) NOT NULL,
 	"address" text NOT NULL,
@@ -250,6 +274,18 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
+ ALTER TABLE "job_posts" ADD CONSTRAINT "job_posts_parent_job_id_job_posts_id_fk" FOREIGN KEY ("parent_job_id") REFERENCES "public"."job_posts"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "healthcare_bank_details" ADD CONSTRAINT "healthcare_bank_details_healthcare_profile_id_healthcare_profiles_id_fk" FOREIGN KEY ("healthcare_profile_id") REFERENCES "public"."healthcare_profiles"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
  ALTER TABLE "healthcare_profile_languages" ADD CONSTRAINT "healthcare_profile_languages_healthcare_profile_id_healthcare_profiles_id_fk" FOREIGN KEY ("healthcare_profile_id") REFERENCES "public"."healthcare_profiles"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
@@ -327,7 +363,9 @@ CREATE INDEX IF NOT EXISTS "unique_job_post_preference" ON "job_post_preferences
 CREATE INDEX IF NOT EXISTS "job_posts_user_id_idx" ON "job_posts" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "job_posts_postcode_idx" ON "job_posts" USING btree ("postcode");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "job_posts_type_idx" ON "job_posts" USING btree ("type");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "job_posts_start_time_idx" ON "job_posts" USING btree ("start_time");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "job_posts_job_date_idx" ON "job_posts" USING btree ("job_date");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "job_posts_parent_job_id_idx" ON "job_posts" USING btree ("parent_job_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "healthcare_bank_details_profile_id_idx" ON "healthcare_bank_details" USING btree ("healthcare_profile_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "healthcare_profile_languages_healthcare_profile_id_language_id_index" ON "healthcare_profile_languages" USING btree ("healthcare_profile_id","language_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "healthcare_profile_specialities_healthcare_profile_id_speciality_id_index" ON "healthcare_profile_specialities" USING btree ("healthcare_profile_id","speciality_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "healthcare_profiles_user_id_idx" ON "healthcare_profiles" USING btree ("user_id");--> statement-breakpoint

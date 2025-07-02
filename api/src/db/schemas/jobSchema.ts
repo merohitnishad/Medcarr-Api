@@ -24,6 +24,16 @@ import {
 export const jobTypeEnum = pgEnum("job_type", ["oneDay", "weekly"]);
 export const paymentTypeEnum = pgEnum("payment_type", ["hourly", "fixed"]);
 export const genderEnum = pgEnum("gender", ["male", "female"]);
+export const relationshipEnum = pgEnum("relationship", [
+  "Myself",
+  "Mother",
+  "Father",
+  "Grandmother",
+  "Grandfather",
+  "Spouse",
+  "Friend",
+  "Other"
+]);
 export const caregiverGenderEnum = pgEnum("caregiver_gender", [
   "male",
   "female",
@@ -46,7 +56,7 @@ export const jobPosts = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     age: integer("age").notNull(),
     status: jobStatus("status").default("open").notNull(),
-    relationship: varchar("relationship", { length: 100 }),
+    relationship: relationshipEnum("relationship").notNull(), // Relationship to the person needing care
     gender: genderEnum("gender").notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     postcode: varchar("postcode", { length: 20 }).notNull(),

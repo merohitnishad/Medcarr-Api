@@ -1,5 +1,5 @@
 {
-  "id": "86558b03-e4ac-4a5d-88e3-690657a56bd5",
+  "id": "fac2b889-18f1-44e6-a2f5-4d20f477b564",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -366,12 +366,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "name": {
-          "name": "name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
         "age": {
           "name": "age",
           "type": "integer",
@@ -388,9 +382,10 @@
         },
         "relationship": {
           "name": "relationship",
-          "type": "varchar(100)",
+          "type": "relationship",
+          "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "gender": {
           "name": "gender",
@@ -417,15 +412,21 @@
           "primaryKey": false,
           "notNull": true
         },
+        "job_date": {
+          "name": "job_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
         "start_time": {
           "name": "start_time",
-          "type": "timestamp",
+          "type": "time",
           "primaryKey": false,
           "notNull": true
         },
         "end_time": {
           "name": "end_time",
-          "type": "timestamp",
+          "type": "time",
           "primaryKey": false,
           "notNull": true
         },
@@ -455,21 +456,22 @@
           "primaryKey": false,
           "notNull": true
         },
-        "start_week": {
-          "name": "start_week",
-          "type": "timestamp",
+        "parent_job_id": {
+          "name": "parent_job_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "end_week": {
-          "name": "end_week",
-          "type": "timestamp",
+        "is_recurring": {
+          "name": "is_recurring",
+          "type": "boolean",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": false
         },
-        "recurring_weekday": {
-          "name": "recurring_weekday",
-          "type": "text[]",
+        "recurring_pattern": {
+          "name": "recurring_pattern",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -561,11 +563,26 @@
           "method": "btree",
           "with": {}
         },
-        "job_posts_start_time_idx": {
-          "name": "job_posts_start_time_idx",
+        "job_posts_job_date_idx": {
+          "name": "job_posts_job_date_idx",
           "columns": [
             {
-              "expression": "start_time",
+              "expression": "job_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "job_posts_parent_job_id_idx": {
+          "name": "job_posts_parent_job_id_idx",
+          "columns": [
+            {
+              "expression": "parent_job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -584,6 +601,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "job_posts_parent_job_id_job_posts_id_fk": {
+          "name": "job_posts_parent_job_id_job_posts_id_fk",
+          "tableFrom": "job_posts",
+          "tableTo": "job_posts",
+          "columnsFrom": [
+            "parent_job_id"
           ],
           "columnsTo": [
             "id"
@@ -645,6 +675,125 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
+    },
+    "public.healthcare_bank_details": {
+      "name": "healthcare_bank_details",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "healthcare_profile_id": {
+          "name": "healthcare_profile_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_name": {
+          "name": "account_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_code": {
+          "name": "sort_code",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_number": {
+          "name": "account_number",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bank_name": {
+          "name": "bank_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_verified": {
+          "name": "is_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "encryption_key_id": {
+          "name": "encryption_key_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "is_deleted": {
+          "name": "is_deleted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "healthcare_bank_details_profile_id_idx": {
+          "name": "healthcare_bank_details_profile_id_idx",
+          "columns": [
+            {
+              "expression": "healthcare_profile_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "healthcare_bank_details_healthcare_profile_id_healthcare_profiles_id_fk": {
+          "name": "healthcare_bank_details_healthcare_profile_id_healthcare_profiles_id_fk",
+          "tableFrom": "healthcare_bank_details",
+          "tableTo": "healthcare_profiles",
+          "columnsFrom": [
+            "healthcare_profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "healthcare_bank_details_healthcare_profile_id_unique": {
+          "name": "healthcare_bank_details_healthcare_profile_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "healthcare_profile_id"
+          ]
+        }
+      }
     },
     "public.healthcare_profile_languages": {
       "name": "healthcare_profile_languages",
@@ -811,6 +960,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "date_of_birth": {
+          "name": "date_of_birth",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gender": {
+          "name": "gender",
+          "type": "gender",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
         "professional_title": {
           "name": "professional_title",
           "type": "varchar(255)",
@@ -822,6 +984,12 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "nationality": {
+          "name": "nationality",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
         },
         "postcode": {
           "name": "postcode",
@@ -1624,6 +1792,20 @@
       "values": [
         "hourly",
         "fixed"
+      ]
+    },
+    "public.relationship": {
+      "name": "relationship",
+      "schema": "public",
+      "values": [
+        "Myself",
+        "Mother",
+        "Father",
+        "Grandmother",
+        "Grandfather",
+        "Spouse",
+        "Friend",
+        "Other"
       ]
     },
     "public.role": {

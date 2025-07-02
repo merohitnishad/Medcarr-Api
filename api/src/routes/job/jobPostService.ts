@@ -5,10 +5,8 @@ import {
   jobPostCareNeeds, 
   jobPostLanguages, 
   jobPostPreferences,
-} from '../../db/schemas/jobSchema.js';
-import { users } from '../../db/schemas/usersSchema.js';
-import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc, or, isNotNull } from 'drizzle-orm';
+} from '../../db/schemas/jobSchema.js';import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
+import { eq, and, desc, count, asc } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -642,147 +640,171 @@ export class JobPostService {
     return sanitized;
   }
 
-// Improved validation with better error messages
-static async parseBulkJobData(fileData: any[]): Promise<BulkJobValidationResult> {
-  const valid: BulkJobData[] = [];
-  const invalid: Array<{ row: number; data: Partial<BulkJobData>; errors: string[] }> = [];
+  // Improved validation with better error messages
+  static async parseBulkJobData(fileData: any[]): Promise<BulkJobValidationResult> {
+    const valid: BulkJobData[] = [];
+    const invalid: Array<{ row: number; data: Partial<BulkJobData>; errors: string[] }> = [];
 
-  // Get all available options for validation
-  const [availableCareNeeds, availableLanguages, availablePreferences] = await Promise.all([
-    this.getAvailableCareNeeds(),
-    this.getAvailableLanguages(),
-    this.getAvailablePreferences()
-  ]);
+    // Get all available options for validation
+    const [availableCareNeeds, availableLanguages, availablePreferences] = await Promise.all([
+      this.getAvailableCareNeeds(),
+      this.getAvailableLanguages(),
+      this.getAvailablePreferences()
+    ]);
 
-  const careNeedMap = new Map(availableCareNeeds.map(cn => [cn.name.toLowerCase(), cn.id]));
-  const languageMap = new Map(availableLanguages.map(l => [l.name.toLowerCase(), l.id]));
-  const preferenceMap = new Map(availablePreferences.map(p => [p.name.toLowerCase(), p.id]));
+    const careNeedMap = new Map(availableCareNeeds.map(cn => [cn.name.toLowerCase(), cn.id]));
+    const languageMap = new Map(availableLanguages.map(l => [l.name.toLowerCase(), l.id]));
+    const preferenceMap = new Map(availablePreferences.map(p => [p.name.toLowerCase(), p.id]));
 
-  // Create arrays of available names for better error messages
-  const availableCareNeedNames = availableCareNeeds.map(cn => cn.name);
-  const availableLanguageNames = availableLanguages.map(l => l.name);
-  const availablePreferenceNames = availablePreferences.map(p => p.name);
+    // Create arrays of available names for better error messages
+    const availableCareNeedNames = availableCareNeeds.map(cn => cn.name);
+    const availableLanguageNames = availableLanguages.map(l => l.name);
+    const availablePreferenceNames = availablePreferences.map(p => p.name);
 
-  for (let i = 0; i < fileData.length; i++) {
-    const row = fileData[i];
-    const rowNumber = i + 2; // +2 because arrays are 0-indexed and we skip header
-    const errors: string[] = [];
+    for (let i = 0; i < fileData.length; i++) {
+      const row = fileData[i];
+      const rowNumber = i + 2; // +2 because arrays are 0-indexed and we skip header
+      const errors: string[] = [];
 
-    // Parse the row data
-    const jobData: Partial<BulkJobData> = {
-      age: this.parseNumber(row.age),
-      relationship: this.parseString(row.relationship),
-      gender: this.parseGender(row.gender),
-      title: this.parseString(row.title),
-      postcode: this.parseString(row.postcode),
-      address: this.parseString(row.address),
-      jobDate: this.parseDate(row.jobDate || row.job_date),
-      startTime: this.parseTime(row.startTime || row.start_time),
-      endTime: this.parseTime(row.endTime || row.end_time),
-      shiftLength: this.parseNumber(row.shiftLength || row.shift_length),
-      overview: this.parseString(row.overview),
-      caregiverGender: this.parseGender(row.caregiverGender || row.caregiver_gender),
-      paymentType: this.parsePaymentType(row.paymentType || row.payment_type),
-      paymentCost: this.parseNumber(row.paymentCost || row.payment_cost),
-      careNeeds: this.parseString(row.careNeeds || row.care_needs),
-      languages: this.parseString(row.languages),
-      preferences: this.parseString(row.preferences),
-      rowNumber
+      // Parse the row data
+      const jobData: Partial<BulkJobData> = {
+        age: this.parseNumber(row.age),
+        relationship: this.parseRelationship(row.relationship),
+        gender: this.parseGender(row.gender),
+        title: this.parseString(row.title),
+        postcode: this.parseString(row.postcode),
+        address: this.parseString(row.address),
+        jobDate: this.parseDate(row.jobDate || row.job_date),
+        startTime: this.parseTime(row.startTime || row.start_time),
+        endTime: this.parseTime(row.endTime || row.end_time),
+        shiftLength: this.parseNumber(row.shiftLength || row.shift_length),
+        overview: this.parseString(row.overview),
+        caregiverGender: this.parseGender(row.caregiverGender || row.caregiver_gender),
+        paymentType: this.parsePaymentType(row.paymentType || row.payment_type),
+        paymentCost: this.parseNumber(row.paymentCost || row.payment_cost),
+        careNeeds: this.parseString(row.careNeeds || row.care_needs),
+        languages: this.parseString(row.languages),
+        preferences: this.parseString(row.preferences),
+        rowNumber
+      };
+
+      // Validate required fields
+      if (!jobData.age) errors.push('Age is required');
+      if (!jobData.gender) errors.push('Gender is required');
+      if (!jobData.title) errors.push('Title is required');
+      if (!jobData.postcode) errors.push('Postcode is required');
+      if (!jobData.address) errors.push('Address is required');
+      if (!jobData.jobDate) errors.push('Job date is required');
+      if (!jobData.startTime) errors.push('Start time is required');
+      if (!jobData.endTime) errors.push('End time is required');
+      if (!jobData.shiftLength) errors.push('Shift length is required');
+      if (!jobData.overview) errors.push('Overview is required');
+      if (!jobData.caregiverGender) errors.push('Caregiver gender is required');
+      if (!jobData.paymentType) errors.push('Payment type is required');
+      if (!jobData.paymentCost) errors.push('Payment cost is required');
+
+      // Validate data quality
+      if (jobData.age && (jobData.age < 0 || jobData.age > 120)) {
+        errors.push('Age must be between 0 and 120');
+      }
+
+      if (jobData.title && jobData.title.trim().length < 5) {
+        errors.push('Title must be at least 5 characters long');
+      }
+
+      if (jobData.overview && jobData.overview.trim().length < 20) {
+        errors.push('Overview must be at least 20 characters long');
+      }
+
+      if (jobData.shiftLength && (jobData.shiftLength < 1 || jobData.shiftLength > 24)) {
+        errors.push('Shift length must be between 1 and 24 hours');
+      }
+
+      if (jobData.paymentCost && jobData.paymentCost < 0) {
+        errors.push('Payment cost must be positive');
+      }
+
+      // Validate job date is in future
+      if (jobData.jobDate) {
+        const jobDate = new Date(jobData.jobDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (jobDate < today) {
+          errors.push('Job date must be in the future');
+        }
+      }
+
+      // Validate recurring job data
+      if (jobData.startTime && jobData.endTime && jobData.startTime >= jobData.endTime) {
+        errors.push('End time must be after start time');
+      }
+
+      // Validate and convert care needs, languages, preferences with better error messages
+      if (jobData.relationship === undefined && row.relationship) {
+        const availableRelationships = ['Mother', 'Father', 'Myself', 'Grandmother', 'Grandfather', 'Spouse', 'Friend', 'Other'];
+        errors.push(`Invalid relationship: [${row.relationship}]. Available options: [${availableRelationships.join(', ')}]`);
+      }
+
+      if (jobData.gender === undefined && row.gender) {
+        const availableGenders = ['male', 'female'];
+        errors.push(`Invalid gender: [${row.gender}]. Available options: [${availableGenders.join(', ')}]`);
+      }
+      
+      // Add validation for caregiver gender
+      if (jobData.caregiverGender === undefined && (row.caregiverGender || row.caregiver_gender)) {
+        const availableGenders = ['male', 'female'];
+        const inputValue = row.caregiverGender || row.caregiver_gender;
+        errors.push(`Invalid caregiver gender: [${inputValue}]. Available options: [${availableGenders.join(', ')}]`);
+      }
+      
+      // Add validation for payment type
+      if (jobData.paymentType === undefined && (row.paymentType || row.payment_type)) {
+        const availablePaymentTypes = ['hourly', 'fixed'];
+        const inputValue = row.paymentType || row.payment_type;
+        errors.push(`Invalid payment type: [${inputValue}]. Available options: [${availablePaymentTypes.join(', ')}]`);
+      }
+      
+      if (jobData.careNeeds) {
+        const careNeedNames = jobData.careNeeds.split(',').map(name => name.trim());
+        const invalidCareNeeds = careNeedNames.filter(name => !careNeedMap.has(name.toLowerCase()));
+        if (invalidCareNeeds.length > 0) {
+          errors.push(`Invalid care needs: [${invalidCareNeeds.join(', ')}]. Available options: [${availableCareNeedNames.join(', ')}]`);
+        }
+      }
+
+      if (jobData.languages) {
+        const languageNames = jobData.languages.split(',').map(name => name.trim());
+        const invalidLanguages = languageNames.filter(name => !languageMap.has(name.toLowerCase()));
+        if (invalidLanguages.length > 0) {
+          errors.push(`Invalid languages: [${invalidLanguages.join(', ')}]. Available options: [${availableLanguageNames.join(', ')}]`);
+        }
+      }
+
+      if (jobData.preferences) {
+        const preferenceNames = jobData.preferences.split(',').map(name => name.trim());
+        const invalidPreferences = preferenceNames.filter(name => !preferenceMap.has(name.toLowerCase()));
+        if (invalidPreferences.length > 0) {
+          errors.push(`Invalid preferences: [${invalidPreferences.join(', ')}]. Available options: [${availablePreferenceNames.join(', ')}]`);
+        }
+      }
+
+      if (errors.length === 0) {
+        valid.push(jobData as BulkJobData);
+      } else {
+        invalid.push({ row: rowNumber, data: jobData, errors });
+      }
+    }
+
+    return {
+      valid,
+      invalid,
+      summary: {
+        totalRows: fileData.length,
+        validRows: valid.length,
+        invalidRows: invalid.length
+      }
     };
-
-    // Validate required fields
-    if (!jobData.age) errors.push('Age is required');
-    if (!jobData.gender) errors.push('Gender is required');
-    if (!jobData.title) errors.push('Title is required');
-    if (!jobData.postcode) errors.push('Postcode is required');
-    if (!jobData.address) errors.push('Address is required');
-    if (!jobData.jobDate) errors.push('Job date is required');
-    if (!jobData.startTime) errors.push('Start time is required');
-    if (!jobData.endTime) errors.push('End time is required');
-    if (!jobData.shiftLength) errors.push('Shift length is required');
-    if (!jobData.overview) errors.push('Overview is required');
-    if (!jobData.caregiverGender) errors.push('Caregiver gender is required');
-    if (!jobData.paymentType) errors.push('Payment type is required');
-    if (!jobData.paymentCost) errors.push('Payment cost is required');
-
-    // Validate data quality
-    if (jobData.age && (jobData.age < 0 || jobData.age > 120)) {
-      errors.push('Age must be between 0 and 120');
-    }
-
-    if (jobData.title && jobData.title.trim().length < 5) {
-      errors.push('Title must be at least 5 characters long');
-    }
-
-    if (jobData.overview && jobData.overview.trim().length < 20) {
-      errors.push('Overview must be at least 20 characters long');
-    }
-
-    if (jobData.shiftLength && (jobData.shiftLength < 1 || jobData.shiftLength > 24)) {
-      errors.push('Shift length must be between 1 and 24 hours');
-    }
-
-    if (jobData.paymentCost && jobData.paymentCost < 0) {
-      errors.push('Payment cost must be positive');
-    }
-
-    // Validate job date is in future
-    if (jobData.jobDate) {
-      const jobDate = new Date(jobData.jobDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (jobDate < today) {
-        errors.push('Job date must be in the future');
-      }
-    }
-
-    // Validate recurring job data
-    if (jobData.startTime && jobData.endTime && jobData.startTime >= jobData.endTime) {
-      errors.push('End time must be after start time');
-    }
-
-    // Validate and convert care needs, languages, preferences with better error messages
-    if (jobData.careNeeds) {
-      const careNeedNames = jobData.careNeeds.split(',').map(name => name.trim());
-      const invalidCareNeeds = careNeedNames.filter(name => !careNeedMap.has(name.toLowerCase()));
-      if (invalidCareNeeds.length > 0) {
-        errors.push(`Invalid care needs: [${invalidCareNeeds.join(', ')}]. Available options: [${availableCareNeedNames.join(', ')}]`);
-      }
-    }
-
-    if (jobData.languages) {
-      const languageNames = jobData.languages.split(',').map(name => name.trim());
-      const invalidLanguages = languageNames.filter(name => !languageMap.has(name.toLowerCase()));
-      if (invalidLanguages.length > 0) {
-        errors.push(`Invalid languages: [${invalidLanguages.join(', ')}]. Available options: [${availableLanguageNames.join(', ')}]`);
-      }
-    }
-
-    if (jobData.preferences) {
-      const preferenceNames = jobData.preferences.split(',').map(name => name.trim());
-      const invalidPreferences = preferenceNames.filter(name => !preferenceMap.has(name.toLowerCase()));
-      if (invalidPreferences.length > 0) {
-        errors.push(`Invalid preferences: [${invalidPreferences.join(', ')}]. Available options: [${availablePreferenceNames.join(', ')}]`);
-      }
-    }
-
-    if (errors.length === 0) {
-      valid.push(jobData as BulkJobData);
-    } else {
-      invalid.push({ row: rowNumber, data: jobData, errors });
-    }
   }
-
-  return {
-    valid,
-    invalid,
-    summary: {
-      totalRows: fileData.length,
-      validRows: valid.length,
-      invalidRows: invalid.length
-    }
-  };
-}
 
   // Create bulk jobs using existing createJobPost method
   static async createBulkJobs(userId: string, validJobData: BulkJobData[]): Promise<BulkJobCreateResult> {
@@ -900,18 +922,24 @@ static async parseBulkJobData(fileData: any[]): Promise<BulkJobValidationResult>
     return str === 'true' || str === 'yes' || str === '1';
   }
 
+  private static parseRelationship(value: any): string | undefined {
+    if (!value) return undefined;
+    const relationship = String(value).trim();
+    const validRelationships = ['Mother', 'Father', 'Myself', 'Grandmother', 'Grandfather', 'Spouse', 'Friend', 'Other'];
+    
+    // Case insensitive match
+    const match = validRelationships.find(valid => 
+      valid.toLowerCase() === relationship.toLowerCase()
+    );
+    
+    return match; // Returns the properly cased version or undefined
+  }
+
   private static parseGender(value: any): 'male' | 'female' | undefined {
     if (!value) return undefined;
     const gender = String(value).toLowerCase().trim();
     if (gender === 'male' || gender === 'm') return 'male';
     if (gender === 'female' || gender === 'f') return 'female';
-    return undefined;
-  }
-
-  private static parseJobType(value: any): 'oneDay' | undefined {
-    if (!value) return undefined;
-    const type = String(value).toLowerCase().trim();
-    if (type === 'oneday' || type === 'one-day' || type === 'one day') return 'oneDay';
     return undefined;
   }
 

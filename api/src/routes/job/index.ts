@@ -701,7 +701,8 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
               { category: '', value: 'Grandmother', description: 'Care for my grandmother' },
               { category: '', value: 'Grandfather', description: 'Care for my grandfather' },
               { category: '', value: 'Spouse', description: 'Care for my spouse/partner' },
-              { category: '', value: 'Other', description: 'Other family member or friend' },
+              { category: '', value: 'Friend', description: 'Care for my friend' },
+              { category: '', value: 'Other', description: 'Other family member' },
               
               { category: 'GENDER OPTIONS', value: '', description: 'Choose from the following gender options:' },
               { category: '', value: 'male', description: 'Male' },

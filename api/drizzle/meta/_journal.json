@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1750841062606,
-      "tag": "0000_yielding_owl",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1750854318441,
-      "tag": "0001_free_quentin_quire",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1751014649368,
-      "tag": "0002_tan_gwen_stacy",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1751019303497,
-      "tag": "0003_jittery_archangel",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1751272978000,
-      "tag": "0004_magical_phantom_reporter",
+      "when": 1751452531433,
+      "tag": "0000_majestic_skreet",
       "breakpoints": true
     }
   ]
