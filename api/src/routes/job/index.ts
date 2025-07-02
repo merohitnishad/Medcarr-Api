@@ -740,7 +740,7 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
         '# Bulk Job Upload Template',
         '# Field Descriptions:',
         '# age: Age of person receiving care (0-120, required)',
-        '# relationship: Your relationship (Mother, Father, Myself, Grandmother, Grandfather, Spouse, Other)',
+        '# relationship: Your relationship (Mother, Father, Myself, Grandmother, Grandfather, Spouse, Friend, Other)',
         '# gender: Gender of person receiving care (male, female, required)',
         '# title: Job title/summary (minimum 5 characters, required)',
         '# postcode: Postcode where care needed (required)',
