@@ -8,7 +8,7 @@ import {
   jobPostPreferences,
 } from '../../db/schemas/jobSchema.js';
 import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc, gte } from 'drizzle-orm';
+import { eq, and, desc, count, asc, gte, ne, lt } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -400,43 +400,131 @@ export class JobPostService {
     const { page = 1, limit = 10 } = filters;
     const offset = (page - 1) * limit;
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of today
+
     const conditions = [
-      eq(jobPosts.userId, userId),
-      eq(jobPosts.isDeleted, false),
-      // Show single jobs and child jobs, but not parent templates
-      // or(
-      //   eq(jobPosts.isRecurring, false),
-      //   and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
-      // )
+        eq(jobPosts.userId, userId),
+        eq(jobPosts.isDeleted, false),
+        eq(jobPosts.status, 'open'), // Status must be open
+        gte(jobPosts.jobDate, today), // Job date must be after today
     ];
 
     const [totalCount] = await db
-      .select({ count: count() })
-      .from(jobPosts)
-      .where(and(...conditions));
+        .select({ count: count() })
+        .from(jobPosts)
+        .where(and(...conditions));
 
     const results = await db.query.jobPosts.findMany({
-      where: and(...conditions),
-      with: {
-        careNeedsRelation: { with: { careNeed: true } },
-        languagesRelation: { with: { language: true } },
-        preferencesRelation: { with: { preference: true } }
-      },
-      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
-      limit,
-      offset
+        where: and(...conditions),
+        with: {
+            careNeedsRelation: { with: { careNeed: true } },
+            languagesRelation: { with: { language: true } },
+            preferencesRelation: { with: { preference: true } }
+        },
+        orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
+        limit,
+        offset
     });
 
     return {
-      data: results,
-      pagination: {
-        page,
+        data: results,
+        pagination: {
+            page,
+            limit,
+            total: totalCount.count,
+            totalPages: Math.ceil(totalCount.count / limit),
+            hasNext: page < Math.ceil(totalCount.count / limit),
+            hasPrev: page > 1
+        }
+    };
+  }
+
+  static async getUserPastJobPosts(userId: string, filters: JobPostFilters = {}) {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (page - 1) * limit;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of today
+
+    const conditions = [
+        eq(jobPosts.userId, userId),
+        eq(jobPosts.isDeleted, false),
+        ne(jobPosts.status, 'open'), // Status not equal to open
+    ];
+
+    const [totalCount] = await db
+        .select({ count: count() })
+        .from(jobPosts)
+        .where(and(...conditions));
+
+    const results = await db.query.jobPosts.findMany({
+        where: and(...conditions),
+        with: {
+            careNeedsRelation: { with: { careNeed: true } },
+            languagesRelation: { with: { language: true } },
+            preferencesRelation: { with: { preference: true } }
+        },
+        orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
         limit,
-        total: totalCount.count,
-        totalPages: Math.ceil(totalCount.count / limit),
-        hasNext: page < Math.ceil(totalCount.count / limit),
-        hasPrev: page > 1
-      }
+        offset
+    });
+
+    return {
+        data: results,
+        pagination: {
+            page,
+            limit,
+            total: totalCount.count,
+            totalPages: Math.ceil(totalCount.count / limit),
+            hasNext: page < Math.ceil(totalCount.count / limit),
+            hasPrev: page > 1
+        }
+    };
+  }
+
+  static async getUserExpiredJobPosts(userId: string, filters: JobPostFilters = {}) {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (page - 1) * limit;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of today
+
+    const conditions = [
+        eq(jobPosts.userId, userId),
+        eq(jobPosts.isDeleted, false),
+        eq(jobPosts.status, 'open'), // Status not equal to open
+        lt(jobPosts.jobDate, today), // Job date is before today
+
+    ];
+
+    const [totalCount] = await db
+        .select({ count: count() })
+        .from(jobPosts)
+        .where(and(...conditions));
+
+    const results = await db.query.jobPosts.findMany({
+        where: and(...conditions),
+        with: {
+            careNeedsRelation: { with: { careNeed: true } },
+            languagesRelation: { with: { language: true } },
+            preferencesRelation: { with: { preference: true } }
+        },
+        orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
+        limit,
+        offset
+    });
+
+    return {
+        data: results,
+        pagination: {
+            page,
+            limit,
+            total: totalCount.count,
+            totalPages: Math.ceil(totalCount.count / limit),
+            hasNext: page < Math.ceil(totalCount.count / limit),
+            hasPrev: page > 1
+        }
     };
   }
 
@@ -674,28 +762,28 @@ export class JobPostService {
   static async parseBulkJobData(fileData: any[]): Promise<BulkJobValidationResult> {
     const valid: BulkJobData[] = [];
     const invalid: Array<{ row: number; data: Partial<BulkJobData>; errors: string[] }> = [];
-
+  
     // Get all available options for validation
     const [availableCareNeeds, availableLanguages, availablePreferences] = await Promise.all([
       this.getAvailableCareNeeds(),
       this.getAvailableLanguages(),
       this.getAvailablePreferences()
     ]);
-
+  
     const careNeedMap = new Map(availableCareNeeds.map(cn => [cn.name.toLowerCase(), cn.id]));
     const languageMap = new Map(availableLanguages.map(l => [l.name.toLowerCase(), l.id]));
     const preferenceMap = new Map(availablePreferences.map(p => [p.name.toLowerCase(), p.id]));
-
+  
     // Create arrays of available names for better error messages
     const availableCareNeedNames = availableCareNeeds.map(cn => cn.name);
     const availableLanguageNames = availableLanguages.map(l => l.name);
     const availablePreferenceNames = availablePreferences.map(p => p.name);
-
+  
     for (let i = 0; i < fileData.length; i++) {
       const row = fileData[i];
       const rowNumber = i + 2; // +2 because arrays are 0-indexed and we skip header
       const errors: string[] = [];
-
+  
       // Parse the row data
       const jobData: Partial<BulkJobData> = {
         age: this.parseNumber(row.age),
@@ -717,7 +805,7 @@ export class JobPostService {
         preferences: this.parseString(row.preferences),
         rowNumber
       };
-
+  
       // Validate required fields
       if (!jobData.age) errors.push('Age is required');
       if (!jobData.gender) errors.push('Gender is required');
@@ -732,28 +820,39 @@ export class JobPostService {
       if (!jobData.caregiverGender) errors.push('Caregiver gender is required');
       if (!jobData.paymentType) errors.push('Payment type is required');
       if (!jobData.paymentCost) errors.push('Payment cost is required');
-
+  
       // Validate data quality
       if (jobData.age && (jobData.age < 0 || jobData.age > 120)) {
         errors.push('Age must be between 0 and 120');
       }
-
+  
       if (jobData.title && jobData.title.trim().length < 5) {
         errors.push('Title must be at least 5 characters long');
       }
-
+  
       if (jobData.overview && jobData.overview.trim().length < 20) {
         errors.push('Overview must be at least 20 characters long');
       }
-
+  
       if (jobData.shiftLength && (jobData.shiftLength < 1 || jobData.shiftLength > 24)) {
         errors.push('Shift length must be between 1 and 24 hours');
       }
-
+  
       if (jobData.paymentCost && jobData.paymentCost < 0) {
         errors.push('Payment cost must be positive');
       }
-
+  
+      // Validate postcode format and existence
+      if (jobData.postcode) {
+        const postcodeValidation = await this.validatePostcode(jobData.postcode);
+        if (!postcodeValidation.isValid) {
+          errors.push(postcodeValidation.error as string);
+        } else {
+          // Update the postcode with the correctly formatted version
+          jobData.postcode = postcodeValidation.formattedPostcode;
+        }
+      }
+  
       // Validate job date is in future
       if (jobData.jobDate) {
         const jobDate = new Date(jobData.jobDate);
@@ -763,18 +862,18 @@ export class JobPostService {
           errors.push('Job date must be in the future');
         }
       }
-
+  
       // Validate recurring job data
       if (jobData.startTime && jobData.endTime && jobData.startTime >= jobData.endTime) {
         errors.push('End time must be after start time');
       }
-
+  
       // Validate and convert care needs, languages, preferences with better error messages
       if (jobData.relationship === undefined && row.relationship) {
         const availableRelationships = ['Mother', 'Father', 'Myself', 'Grandmother', 'Grandfather', 'Spouse', 'Friend', 'Other'];
         errors.push(`Invalid relationship: [${row.relationship}]. Available options: [${availableRelationships.join(', ')}]`);
       }
-
+  
       if (jobData.gender === undefined && row.gender) {
         const availableGenders = ['male', 'female'];
         errors.push(`Invalid gender: [${row.gender}]. Available options: [${availableGenders.join(', ')}]`);
@@ -801,7 +900,7 @@ export class JobPostService {
           errors.push(`Invalid care needs: [${invalidCareNeeds.join(', ')}]. Available options: [${availableCareNeedNames.join(', ')}]`);
         }
       }
-
+  
       if (jobData.languages) {
         const languageNames = jobData.languages.split(',').map(name => name.trim());
         const invalidLanguages = languageNames.filter(name => !languageMap.has(name.toLowerCase()));
@@ -809,7 +908,7 @@ export class JobPostService {
           errors.push(`Invalid languages: [${invalidLanguages.join(', ')}]. Available options: [${availableLanguageNames.join(', ')}]`);
         }
       }
-
+  
       if (jobData.preferences) {
         const preferenceNames = jobData.preferences.split(',').map(name => name.trim());
         const invalidPreferences = preferenceNames.filter(name => !preferenceMap.has(name.toLowerCase()));
@@ -817,14 +916,14 @@ export class JobPostService {
           errors.push(`Invalid preferences: [${invalidPreferences.join(', ')}]. Available options: [${availablePreferenceNames.join(', ')}]`);
         }
       }
-
+  
       if (errors.length === 0) {
         valid.push(jobData as BulkJobData);
       } else {
         invalid.push({ row: rowNumber, data: jobData, errors });
       }
     }
-
+  
     return {
       valid,
       invalid,
@@ -1132,4 +1231,82 @@ export class JobPostService {
   private static toRadians(degrees: number): number {
     return degrees * (Math.PI / 180);
   }
+
+  private static async validatePostcode(postcode: string): Promise<{
+    isValid: boolean;
+    formattedPostcode?: string;
+    error?: string;
+  }> {
+    try {
+      // Remove spaces and convert to uppercase for initial formatting
+      const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
+      
+      // Basic UK postcode format validation (regex)
+      const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$/;
+      
+      if (!postcodeRegex.test(cleanPostcode)) {
+        return {
+          isValid: false,
+          error: `Invalid postcode format: [${postcode}]. Please use valid UK postcode format (e.g., SW1A 1AA, M1 1AA)`
+        };
+      }
+  
+      // Format postcode properly (add space in the right place)
+      const formattedPostcode = cleanPostcode.slice(0, -3) + ' ' + cleanPostcode.slice(-3);
+      
+      // Validate with postcodes.io API
+      const response = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(formattedPostcode)}`);
+      
+      if (response.status === 404) {
+        return {
+          isValid: false,
+          error: `Postcode not found: [${postcode}]. Please check if the postcode exists and is spelled correctly`
+        };
+      }
+      
+      if (!response.ok) {
+        // If API is down, fall back to format validation only
+        console.warn(`Postcodes.io API error (${response.status}), falling back to format validation`);
+        return {
+          isValid: true,
+          formattedPostcode: formattedPostcode
+        };
+      }
+  
+      const data = await response.json();
+      
+      if (data.status === 200 && data.result) {
+        return {
+          isValid: true,
+          formattedPostcode: data.result.postcode // Use the API's formatted version
+        };
+      } else {
+        return {
+          isValid: false,
+          error: `Invalid postcode: [${postcode}]. Postcode validation failed`
+        };
+      }
+      
+    } catch (error) {
+      console.error('Postcode validation error:', error);
+      
+      // If API call fails, fall back to basic format validation
+      const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
+      const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$/;
+      
+      if (postcodeRegex.test(cleanPostcode)) {
+        const formattedPostcode = cleanPostcode.slice(0, -3) + ' ' + cleanPostcode.slice(-3);
+        return {
+          isValid: true,
+          formattedPostcode: formattedPostcode
+        };
+      } else {
+        return {
+          isValid: false,
+          error: `Invalid postcode format: [${postcode}]. Please use valid UK postcode format (e.g., SW1A 1AA, M1 1AA)`
+        };
+      }
+    }
+  }
+  
 }

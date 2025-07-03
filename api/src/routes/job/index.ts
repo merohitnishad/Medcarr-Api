@@ -262,6 +262,66 @@ router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, 
   }
 });
 
+// Get current user's past job posts
+router.get('/my/past-posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const filters: JobPostFilters = {
+            page: req.query.page ? parseInt(req.query.page as string) : 1,
+            limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+        };
+
+        const result = await JobPostService.getUserPastJobPosts(userId, filters);
+
+        // Sanitize all job posts
+        const sanitizedData = result.data.map((jobPost: any) => JobPostService.sanitizeJobPostData(jobPost));
+
+        res.json({
+            success: true,
+            data: sanitizedData,
+            pagination: result.pagination
+        });
+        return;
+    } catch (error) {
+        console.error('Error in get user past job posts route:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch your past job posts' 
+        });
+        return;
+    }
+});
+
+// Get current user's expire job posts
+router.get('/my/expire-posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const filters: JobPostFilters = {
+            page: req.query.page ? parseInt(req.query.page as string) : 1,
+            limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+        };
+
+        const result = await JobPostService.getUserExpiredJobPosts(userId, filters);
+
+        // Sanitize all job posts
+        const sanitizedData = result.data.map((jobPost: any) => JobPostService.sanitizeJobPostData(jobPost));
+
+        res.json({
+            success: true,
+            data: sanitizedData,
+            pagination: result.pagination
+        });
+        return;
+    } catch (error) {
+        console.error('Error in get user past job posts route:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch your past job posts' 
+        });
+        return;
+    }
+});
+
 // Get a specific job post by ID (single, child, or parent - all treated the same)
 router.get('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
