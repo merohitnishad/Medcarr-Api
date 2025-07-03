@@ -325,7 +325,6 @@ export class JobPostService {
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
-      // Only show jobs with future dates
       gte(jobPosts.jobDate, today)
     ];
   
@@ -352,33 +351,39 @@ export class JobPostService {
       orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)]
     });
   
-    // If userId is provided, get user's postcode and sort by distance
     if (userId) {
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
       
       if (userPostcode) {
         const resultsWithDistance = [];
         
-        // Process distances sequentially to avoid API rate limiting
-        for (const job of results) {
-          const distance = await this.calculateDistanceWithUnits(userPostcode, job.postcode);
-          resultsWithDistance.push({
-            ...job,
-            distance: distance
+        // Process distances with rate limiting (max 5 concurrent requests)
+        const chunks = this.chunkArray(results, 5);
+        
+        for (const chunk of chunks) {
+          const chunkPromises = chunk.map(async (job) => {
+            const distance = await this.calculateDistanceWithUnitsRetry(userPostcode, job.postcode);
+            return {
+              ...job,
+              distance: distance
+            };
           });
+          
+          const chunkResults = await Promise.all(chunkPromises);
+          resultsWithDistance.push(...chunkResults);
+          
+          // Add delay between chunks to respect rate limits
+          if (chunks.indexOf(chunk) < chunks.length - 1) {
+            await this.delay(200); // 200ms delay between chunks
+          }
         }
   
-        // Sort by distance (shortest first) - using km for sorting
         resultsWithDistance.sort((a, b) => a.distance.km - b.distance.km);
-        
-        // Apply pagination after sorting
         results = resultsWithDistance.slice(offset, offset + limit);
       } else {
-        // Apply pagination if no postcode found
         results = results.slice(offset, offset + limit);
       }
     } else {
-      // Apply pagination if no userId
       results = results.slice(offset, offset + limit);
     }
   
@@ -1140,5 +1145,153 @@ export class JobPostService {
 
   private static toRadians(degrees: number): number {
     return degrees * (Math.PI / 180);
+  }
+
+  private static coordinateCache = new Map<string, {latitude: number, longitude: number} | null>();
+  private static readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+  private static cacheTimestamps = new Map<string, number>();
+
+
+  private static async calculateDistanceWithUnitsRetry(
+    postcode1: string, 
+    postcode2: string, 
+    maxRetries: number = 3
+  ): Promise<{km: number, miles: number}> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const [coord1, coord2] = await Promise.all([
+          this.getPostcodeCoordinatesWithRetry(postcode1, maxRetries),
+          this.getPostcodeCoordinatesWithRetry(postcode2, maxRetries)
+        ]);
+
+        if (!coord1 || !coord2) {
+          return { km: 999, miles: 999 };
+        }
+
+        const distanceKm = this.calculateHaversineDistance(
+          coord1.latitude, coord1.longitude,
+          coord2.latitude, coord2.longitude,
+          6371
+        );
+
+        const distanceMiles = this.calculateHaversineDistance(
+          coord1.latitude, coord1.longitude,
+          coord2.latitude, coord2.longitude,
+          3959
+        );
+
+        return {
+          km: Math.round(distanceKm * 10) / 10,
+          miles: Math.round(distanceMiles * 10) / 10
+        };
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Distance calculation attempt ${attempt + 1} failed:`, error);
+        
+        if (attempt < maxRetries - 1) {
+          await this.delay(Math.pow(2, attempt) * 1000); // Exponential backoff
+        }
+      }
+    }
+    
+    console.error('All distance calculation attempts failed:', lastError);
+    return { km: 999, miles: 999 };
+  }
+
+  // Enhanced postcode coordinates with caching and retry
+  private static async getPostcodeCoordinatesWithRetry(
+    postcode: string, 
+    maxRetries: number = 3
+  ): Promise<{latitude: number, longitude: number} | null> {
+    const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
+    
+    // Check cache first
+    const cached = this.getFromCache(cleanPostcode);
+    if (cached !== undefined) {
+      return cached;
+    }
+    
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'YourAppName/1.0.0' // Be a good API citizen
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          if (response.status === 429) { // Rate limited
+            const retryAfter = response.headers.get('Retry-After');
+            const delay = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt) * 1000;
+            await this.delay(delay);
+            continue;
+          }
+          
+          // Cache null for invalid postcodes to avoid repeated API calls
+          this.setCache(cleanPostcode, null);
+          return null;
+        }
+    
+        const data = await response.json();
+        const result = data.result ? {
+          latitude: data.result.latitude,
+          longitude: data.result.longitude
+        } : null;
+        
+        // Cache the result
+        this.setCache(cleanPostcode, result);
+        return result;
+        
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Postcode API attempt ${attempt + 1} failed for ${cleanPostcode}:`, error);
+        
+        if (attempt < maxRetries - 1) {
+          await this.delay(Math.pow(2, attempt) * 1000); // Exponential backoff
+        }
+      }
+    }
+    
+    console.error(`All postcode API attempts failed for ${cleanPostcode}:`, lastError);
+    // Cache null to avoid repeated failures
+    this.setCache(cleanPostcode, null);
+    return null;
+  }
+
+  // Cache management
+  private static getFromCache(postcode: string): {latitude: number, longitude: number} | null | undefined {
+    const timestamp = this.cacheTimestamps.get(postcode);
+    if (timestamp && Date.now() - timestamp < this.CACHE_DURATION) {
+      return this.coordinateCache.get(postcode);
+    }
+    return undefined;
+  }
+
+  private static setCache(postcode: string, coordinates: {latitude: number, longitude: number} | null): void {
+    this.coordinateCache.set(postcode, coordinates);
+    this.cacheTimestamps.set(postcode, Date.now());
+  }
+
+  // Utility functions
+  private static chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  private static delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
