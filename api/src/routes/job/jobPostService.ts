@@ -357,15 +357,16 @@ export class JobPostService {
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
       
       if (userPostcode) {
-        const resultsWithDistance = await Promise.all(
-          results.map(async (job) => {
-            const distance = await this.calculateDistanceWithUnits(userPostcode, job.postcode);
-            return {
-              ...job,
-              distance: distance
-            };
-          })
-        );
+        const resultsWithDistance = [];
+        
+        // Process distances sequentially to avoid API rate limiting
+        for (const job of results) {
+          const distance = await this.calculateDistanceWithUnits(userPostcode, job.postcode);
+          resultsWithDistance.push({
+            ...job,
+            distance: distance
+          });
+        }
   
         // Sort by distance (shortest first) - using km for sorting
         resultsWithDistance.sort((a, b) => a.distance.km - b.distance.km);
