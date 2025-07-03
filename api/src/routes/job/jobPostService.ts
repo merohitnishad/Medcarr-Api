@@ -1,12 +1,14 @@
 // jobPostService.ts - Clean, simplified version
+import { healthcareProfiles } from "../../db/schemas/usersSchema.js";
 import { db } from "../../db/index.js";
 import { 
   jobPosts, 
   jobPostCareNeeds, 
   jobPostLanguages, 
   jobPostPreferences,
-} from '../../db/schemas/jobSchema.js';import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc } from 'drizzle-orm';
+} from '../../db/schemas/jobSchema.js';
+import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
+import { eq, and, desc, count, asc, gte } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -313,31 +315,31 @@ export class JobPostService {
   }
 
   // Get all job posts - show all individual jobs (excluding parent templates)
-  static async getAllJobPosts(filters: JobPostFilters = {}) {
+  static async getAllJobPosts(filters: JobPostFilters = {}, userId?: string) {
     const { page = 1, limit = 10, postcode, type, paymentType, caregiverGender } = filters;
     const offset = (page - 1) * limit;
-
+  
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+  
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
-      // Show single jobs and child jobs, but not parent templates
-      // or(
-      //   eq(jobPosts.isRecurring, false),
-      //   and(eq(jobPosts.isRecurring, true), isNotNull(jobPosts.parentJobId))
-      // )
+      // Only show jobs with future dates
+      gte(jobPosts.jobDate, today)
     ];
-
+  
     if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
     if (type) conditions.push(eq(jobPosts.type, type));
     if (paymentType) conditions.push(eq(jobPosts.paymentType, paymentType));
     if (caregiverGender) conditions.push(eq(jobPosts.caregiverGender, caregiverGender));
-
+  
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
-
-    const results = await db.query.jobPosts.findMany({
+  
+    let results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
         user: {
@@ -347,11 +349,38 @@ export class JobPostService {
         languagesRelation: { with: { language: true } },
         preferencesRelation: { with: { preference: true } }
       },
-      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
-      limit,
-      offset
+      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)]
     });
-
+  
+    // If userId is provided, get user's postcode and sort by distance
+    if (userId) {
+      const userPostcode = await this.getHealthcareProfilePostcode(userId);
+      
+      if (userPostcode) {
+        const resultsWithDistance = await Promise.all(
+          results.map(async (job) => {
+            const distance = await this.calculateDistanceWithUnits(userPostcode, job.postcode);
+            return {
+              ...job,
+              distance: distance
+            };
+          })
+        );
+  
+        // Sort by distance (shortest first) - using km for sorting
+        resultsWithDistance.sort((a, b) => a.distance.km - b.distance.km);
+        
+        // Apply pagination after sorting
+        results = resultsWithDistance.slice(offset, offset + limit);
+      } else {
+        // Apply pagination if no postcode found
+        results = results.slice(offset, offset + limit);
+      }
+    } else {
+      // Apply pagination if no userId
+      results = results.slice(offset, offset + limit);
+    }
+  
     return {
       data: results,
       pagination: {
@@ -986,5 +1015,120 @@ export class JobPostService {
     if (hours >= 24) return undefined;
     
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }
+
+  private static async getHealthcareProfilePostcode(userId: string): Promise<string | null> {
+    try {
+      const healthcareProfile = await db.query.healthcareProfiles.findFirst({
+        where: eq(healthcareProfiles.userId, userId),
+        columns: { postcode: true }
+      });
+  
+      return healthcareProfile?.postcode || null;
+    } catch (error) {
+      console.error('Error fetching healthcare profile postcode:', error);
+      return null;
+    }
+  }
+  
+  // Distance calculation using postcodes.io (Free UK postcode API)
+  private static async calculateDistance(postcode1: string, postcode2: string): Promise<number> {
+    try {
+      // Get coordinates for both postcodes
+      const [coord1, coord2] = await Promise.all([
+        this.getPostcodeCoordinates(postcode1),
+        this.getPostcodeCoordinates(postcode2)
+      ]);
+
+      if (!coord1 || !coord2) {
+        return 999; // Return high distance for invalid postcodes
+      }
+
+      // Calculate distance using Haversine formula
+      const distance = this.calculateHaversineDistance(
+        coord1.latitude, coord1.longitude,
+        coord2.latitude, coord2.longitude
+      );
+
+      return Math.round(distance * 10) / 10; // Round to 1 decimal place
+    } catch (error) {
+      console.error('Error calculating distance:', error);
+      return 999;
+    }
+  }
+
+  // Alternative: Return both km and miles
+  private static async calculateDistanceWithUnits(postcode1: string, postcode2: string): Promise<{km: number, miles: number}> {
+    try {
+      const [coord1, coord2] = await Promise.all([
+        this.getPostcodeCoordinates(postcode1),
+        this.getPostcodeCoordinates(postcode2)
+      ]);
+
+      if (!coord1 || !coord2) {
+        return { km: 999, miles: 999 };
+      }
+
+      const distanceKm = this.calculateHaversineDistance(
+        coord1.latitude, coord1.longitude,
+        coord2.latitude, coord2.longitude,
+        6371 // Earth's radius in km
+      );
+
+      const distanceMiles = this.calculateHaversineDistance(
+        coord1.latitude, coord1.longitude,
+        coord2.latitude, coord2.longitude,
+        3959 // Earth's radius in miles
+      );
+
+      return {
+        km: Math.round(distanceKm * 10) / 10,
+        miles: Math.round(distanceMiles * 10) / 10
+      };
+    } catch (error) {
+      console.error('Error calculating distance:', error);
+      return { km: 999, miles: 999 };
+    }
+  }
+
+  // Get coordinates from postcodes.io
+  private static async getPostcodeCoordinates(postcode: string): Promise<{latitude: number, longitude: number} | null> {
+    try {
+      const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
+      const response = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`);
+      
+      if (!response.ok) {
+        return null;
+      }
+  
+      const data = await response.json();
+      if (data.result) {
+        return {
+          latitude: data.result.latitude,
+          longitude: data.result.longitude
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching postcode coordinates:', error);
+      return null;
+    }
+  }
+  
+  // Updated Haversine formula to accept radius parameter
+  private static calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number, earthRadius: number = 6371): number {
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLon = this.toRadians(lon2 - lon1);
+    
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  private static toRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
   }
 }

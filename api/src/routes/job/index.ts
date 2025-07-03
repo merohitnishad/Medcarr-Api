@@ -7,8 +7,6 @@ import multer from 'multer';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
-
-
 const router = Router();
 
 // Create a new job post (single or recurring)
@@ -195,6 +193,8 @@ router.get('/options', requireNonHealthCare, async (req: AuthenticatedRequest, r
 // Get all job posts with pagination and filters (shows individual jobs only)
 router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const userId = req.user!.id;
+
     const filters: JobPostFilters = {
       page: req.query.page ? parseInt(req.query.page as string) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
@@ -211,7 +211,7 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
       }
     });
 
-    const result = await JobPostService.getAllJobPosts(filters);
+    const result = await JobPostService.getAllJobPosts(filters, userId);
 
     // Sanitize all job posts
     const sanitizedData = result.data.map((jobPost: any) => JobPostService.sanitizeJobPostData(jobPost));
