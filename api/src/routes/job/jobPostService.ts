@@ -1096,7 +1096,16 @@ export class JobPostService {
   private static async getPostcodeCoordinates(postcode: string): Promise<{latitude: number, longitude: number} | null> {
     try {
       const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
-      const response = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`);
+      
+      // Add timeout and abort controller
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         return null;
