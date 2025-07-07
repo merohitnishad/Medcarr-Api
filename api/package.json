@@ -46,6 +46,7 @@
     "@types/lodash": "^4.17.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.1",
+    "@types/nodemailer": "^6.4.17",
     "@types/papaparse": "^5.3.16",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.25.0",

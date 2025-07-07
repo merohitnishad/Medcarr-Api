@@ -1,0 +1,997 @@
+// services/jobApplicationService.ts
+import { db } from "../../db/index.js";
+import { jobApplications } from "../../db/schemas/jobApplicationSchema.js";
+import { jobPosts } from "../../db/schemas/jobSchema.js";
+import { users } from "../../db/schemas/usersSchema.js";
+import { eq, and, desc, count, asc, ne, or, inArray } from "drizzle-orm";
+import { NotificationService } from "../notification/notificationService.js";
+
+export interface CreateApplicationData {
+  jobPostId: string;
+  healthcareUserId: string;
+  applicationMessage?: string;
+}
+
+export interface UpdateApplicationStatusData {
+  status: 'accepted' | 'rejected';
+  responseMessage?: string;
+}
+
+export interface CancelApplicationData {
+  cancellationReason: string;
+  cancellationMessage?: string;
+}
+
+export interface CheckinData {
+  checkinLocation: string;
+}
+
+export interface CheckoutData {
+  checkoutLocation: string;
+}
+
+export interface CompleteJobData {
+  completionNotes?: string;
+}
+
+export interface ReportData {
+  reportReason: string;
+  reportMessage: string;
+}
+
+export interface ApplicationFilters {
+  page?: number;
+  limit?: number;
+  status?: string;
+  jobPostId?: string;
+}
+
+export class JobApplicationService {
+  // Apply for a job
+  static async applyForJob(data: CreateApplicationData) {
+    return await db.transaction(async (tx) => {
+      // Check if job post exists and is active
+      const jobPost = await tx.query.jobPosts.findFirst({
+        where: and(
+          eq(jobPosts.id, data.jobPostId),
+          eq(jobPosts.status, 'open'),
+          eq(jobPosts.isDeleted, false)
+        ),
+        with: {
+          user: {
+            columns: { id: true, name: true, email: true }
+          }
+        }
+      });
+
+      if (!jobPost) {
+        throw new Error('Job post not found or no longer available');
+      }
+
+      // Check if job date is in the future
+      const jobDate = new Date(jobPost.jobDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (jobDate < today) {
+        throw new Error('Cannot apply for past jobs');
+      }
+
+      // Check if user already applied
+      const existingApplication = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.jobPostId, data.jobPostId),
+          eq(jobApplications.healthcareUserId, data.healthcareUserId),
+          eq(jobApplications.isDeleted, false)
+        )
+      });
+
+      if (existingApplication) {
+        throw new Error('You have already applied for this job');
+      }
+
+      // Check if job already has an accepted application
+      const acceptedApplication = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.jobPostId, data.jobPostId),
+          eq(jobApplications.status, 'accepted'),
+          eq(jobApplications.isDeleted, false)
+        )
+      });
+
+      if (acceptedApplication) {
+        throw new Error('This job already has an accepted applicant');
+      }
+
+      // Get healthcare user details
+      const healthcareUser = await tx.query.users.findFirst({
+        where: eq(users.id, data.healthcareUserId),
+        columns: { id: true, name: true, email: true, role: true }
+      });
+
+      if (!healthcareUser || healthcareUser.role !== 'healthcare') {
+        throw new Error('Invalid healthcare user');
+      }
+
+      // Create application
+      const [application] = await tx
+        .insert(jobApplications)
+        .values({
+          jobPostId: data.jobPostId,
+          healthcareUserId: data.healthcareUserId,
+          applicationMessage: data.applicationMessage,
+          status: 'pending',
+        })
+        .returning();
+
+      // Create notification for job poster
+      await NotificationService.createFromTemplate(
+        'JOB_APPLICATION_RECEIVED',
+        jobPost.userId,
+        {
+          jobTitle: jobPost.title,
+          jobPostId: jobPost.id,
+          applicantName: healthcareUser.name,
+        },
+        {
+          jobPostId: jobPost.id,
+          jobApplicationId: application.id,
+          relatedUserId: healthcareUser.id,
+          sendEmail: true,
+        }
+      );
+
+      return application;
+    });
+  }
+
+  // Get applications for a specific job (for job posters)
+  static async getJobApplications(jobPostId: string, userId: string, filters: ApplicationFilters = {}) {
+    const { page = 1, limit = 10, status } = filters;
+    const offset = (page - 1) * limit;
+
+    // Verify job ownership
+    const jobPost = await db.query.jobPosts.findFirst({
+      where: and(
+        eq(jobPosts.id, jobPostId),
+        eq(jobPosts.userId, userId),
+        eq(jobPosts.isDeleted, false)
+      )
+    });
+
+    if (!jobPost) {
+      throw new Error('Job post not found or access denied');
+    }
+
+    const conditions = [
+      eq(jobApplications.jobPostId, jobPostId),
+      eq(jobApplications.isDeleted, false),
+    ];
+
+    if (status) {
+      conditions.push(eq(jobApplications.status, status as any));
+    }
+
+    const [totalCount] = await db
+      .select({ count: count() })
+      .from(jobApplications)
+      .where(and(...conditions));
+
+    const results = await db.query.jobApplications.findMany({
+      where: and(...conditions),
+      with: {
+        healthcareUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          },
+          with: {
+            healthcareProfile: {
+              columns: {
+                fullName: true,
+                nationality: true,
+                dateOfBirth: true,
+                experience: true,
+              }
+            }
+          }
+        },
+        jobPost: {
+          columns: {
+            id: true,
+            title: true,
+            type: true,
+            jobDate: true,
+          }
+        }
+      },
+      orderBy: [desc(jobApplications.createdAt)],
+      limit,
+      offset
+    });
+
+    return {
+      data: results,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / limit),
+        hasNext: page < Math.ceil(totalCount.count / limit),
+        hasPrev: page > 1
+      }
+    };
+  }
+
+  // Get healthcare worker's applications
+  static async getHealthcareApplications(healthcareUserId: string, filters: ApplicationFilters = {}) {
+    const { page = 1, limit = 10, status } = filters;
+    const offset = (page - 1) * limit;
+
+    const conditions = [
+      eq(jobApplications.healthcareUserId, healthcareUserId),
+      eq(jobApplications.isDeleted, false),
+    ];
+
+    if (status) {
+      conditions.push(eq(jobApplications.status, status as any));
+    }
+
+    const [totalCount] = await db
+      .select({ count: count() })
+      .from(jobApplications)
+      .where(and(...conditions));
+
+    const results = await db.query.jobApplications.findMany({
+      where: and(...conditions),
+      with: {
+        jobPost: {
+          columns: {
+            id: true,
+            title: true,
+            type: true,
+            jobDate: true,
+            startTime: true,
+            endTime: true,
+            address: true,
+            postcode: true,
+            paymentType: true,
+            paymentCost: true,
+          },
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+              }
+            }
+          }
+        }
+      },
+      orderBy: [desc(jobApplications.createdAt)],
+      limit,
+      offset
+    });
+
+    return {
+      data: results,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / limit),
+        hasNext: page < Math.ceil(totalCount.count / limit),
+        hasPrev: page > 1
+      }
+    };
+  }
+
+  // Accept or reject application
+  static async updateApplicationStatus(
+    applicationId: string,
+    userId: string,
+    data: UpdateApplicationStatusData
+  ) {
+    return await db.transaction(async (tx) => {
+      // Get application with job post details
+      const application = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.id, applicationId),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          jobPost: {
+            with: {
+              user: {
+                columns: { id: true, name: true }
+              }
+            }
+          },
+          healthcareUser: {
+            columns: { id: true, name: true, email: true }
+          }
+        }
+      });
+
+      if (!application) {
+        throw new Error('Application not found');
+      }
+
+      // Verify job ownership
+      if (application.jobPost.userId !== userId) {
+        throw new Error('Access denied');
+      }
+
+      // Check if application is still pending
+      if (application.status !== 'pending') {
+        throw new Error('Application has already been processed');
+      }
+
+      // If accepting, reject all other pending applications for this job
+      if (data.status === 'accepted') {
+        await tx
+          .update(jobApplications)
+          .set({
+            status: 'rejected',
+            respondedAt: new Date(),
+            responseMessage: 'Another candidate was selected',
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(jobApplications.jobPostId, application.jobPostId),
+            eq(jobApplications.status, 'pending'),
+            ne(jobApplications.id, applicationId)
+          ));
+
+        // Update job post status to indicate it has an accepted applicant
+        await tx
+          .update(jobPosts)
+          .set({
+            status: 'approved',
+            updatedAt: new Date(),
+          })
+          .where(eq(jobPosts.id, application.jobPostId));
+      }
+
+      // Update the application
+      const [updatedApplication] = await tx
+        .update(jobApplications)
+        .set({
+          status: data.status,
+          respondedAt: new Date(),
+          responseMessage: data.responseMessage,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobApplications.id, applicationId))
+        .returning();
+
+      // Create notification for healthcare worker
+      const templateKey = data.status === 'accepted' ? 'APPLICATION_ACCEPTED' : 'APPLICATION_REJECTED';
+      await NotificationService.createFromTemplate(
+        templateKey,
+        application.healthcareUserId,
+        {
+          jobTitle: application.jobPost.title,
+          applicationId: application.id,
+          jobPostId: application.jobPostId,
+        },
+        {
+          jobPostId: application.jobPostId,
+          jobApplicationId: application.id,
+          relatedUserId: application.jobPost.userId,
+          sendEmail: true,
+        }
+      );
+
+      return updatedApplication;
+    });
+  }
+
+  // Cancel application (by healthcare worker or job poster)
+  static async cancelApplication(
+    applicationId: string,
+    userId: string,
+    data: CancelApplicationData
+  ) {
+    return await db.transaction(async (tx) => {
+      const application = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.id, applicationId),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          jobPost: {
+            with: {
+              user: { columns: { id: true, name: true } }
+            }
+          },
+          healthcareUser: {
+            columns: { id: true, name: true }
+          }
+        }
+      });
+
+      if (!application) {
+        throw new Error('Application not found');
+      }
+
+      // Check if user has permission to cancel
+      const isHealthcareWorker = application.healthcareUserId === userId;
+      const isJobPoster = application.jobPost.userId === userId;
+
+      if (!isHealthcareWorker && !isJobPoster) {
+        throw new Error('Access denied');
+      }
+
+      // Can only cancel pending or accepted applications
+      if (!['pending', 'accepted'].includes(application.status)) {
+        throw new Error('Application cannot be cancelled at this stage');
+      }
+
+      // Update application
+      const [updatedApplication] = await tx
+        .update(jobApplications)
+        .set({
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancellationReason: data.cancellationReason as any,
+          cancellationMessage: data.cancellationMessage,
+          cancelledBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobApplications.id, applicationId))
+        .returning();
+
+      // If this was an accepted application, reopen the job
+      if (application.status === 'accepted') {
+        await tx
+          .update(jobPosts)
+          .set({
+            status: 'open',
+            updatedAt: new Date(),
+          })
+          .where(eq(jobPosts.id, application.jobPostId));
+      }
+
+      // Create notification for the other party
+      const notificationUserId = isHealthcareWorker ? application.jobPost.userId : application.healthcareUserId;
+      const templateKey = isHealthcareWorker ? 'JOB_CANCELLED_BY_HEALTHCARE' : 'JOB_CANCELLED_BY_POSTER';
+
+      await NotificationService.createFromTemplate(
+        'APPLICATION_CANCELLED',
+        notificationUserId,
+        {
+          jobTitle: application.jobPost.title,
+          applicationId: application.id,
+          jobPostId: application.jobPostId,
+        },
+        {
+          jobPostId: application.jobPostId,
+          jobApplicationId: application.id,
+          relatedUserId: userId,
+          sendEmail: true,
+          metadata: {
+            cancellationReason: data.cancellationReason,
+            cancelledBy: isHealthcareWorker ? 'healthcare' : 'poster'
+          }
+        }
+      );
+
+      return updatedApplication;
+    });
+  }
+
+  // Check in to job
+  static async checkinToJob(
+    applicationId: string,
+    healthcareUserId: string,
+    data: CheckinData
+  ) {
+    const application = await db.query.jobApplications.findFirst({
+      where: and(
+        eq(jobApplications.id, applicationId),
+        eq(jobApplications.healthcareUserId, healthcareUserId),
+        eq(jobApplications.status, 'accepted'),
+        eq(jobApplications.isDeleted, false)
+      ),
+      with: {
+        jobPost: {
+          with: {
+            user: { columns: { id: true, name: true } }
+          }
+        }
+      }
+    });
+
+    if (!application) {
+      throw new Error('Application not found or not accepted');
+    }
+
+    // Check if already checked in
+    if (application.checkedInAt) {
+      throw new Error('Already checked in');
+    }
+
+    // Check if it's the job date
+    const jobDate = new Date(application.jobPost.jobDate);
+    const today = new Date();
+    jobDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    if (jobDate.getTime() !== today.getTime()) {
+      throw new Error('Can only check in on the job date');
+    }
+
+    const [updatedApplication] = await db
+      .update(jobApplications)
+      .set({
+        checkedInAt: new Date(),
+        checkinLocation: data.checkinLocation,
+        updatedAt: new Date(),
+      })
+      .where(eq(jobApplications.id, applicationId))
+      .returning();
+
+    // Notify job poster
+    await NotificationService.createFromTemplate(
+      'JOB_STARTED',
+      application.jobPost.userId,
+      {
+        jobTitle: application.jobPost.title,
+        jobPostId: application.jobPostId,
+      },
+      {
+        jobPostId: application.jobPostId,
+        jobApplicationId: application.id,
+        relatedUserId: healthcareUserId,
+        sendEmail: true,
+      }
+    );
+
+    return updatedApplication;
+  }
+
+  // Check out from job
+  static async checkoutFromJob(
+    applicationId: string,
+    healthcareUserId: string,
+    data: CheckoutData
+  ) {
+    const application = await db.query.jobApplications.findFirst({
+      where: and(
+        eq(jobApplications.id, applicationId),
+        eq(jobApplications.healthcareUserId, healthcareUserId),
+        eq(jobApplications.status, 'accepted'),
+        eq(jobApplications.isDeleted, false)
+      ),
+      with: {
+        jobPost: true
+      }
+    });
+
+    if (!application) {
+      throw new Error('Application not found or not accepted');
+    }
+
+    if (!application.checkedInAt) {
+      throw new Error('Must check in before checking out');
+    }
+
+    if (application.checkedOutAt) {
+      throw new Error('Already checked out');
+    }
+
+    const [updatedApplication] = await db
+      .update(jobApplications)
+      .set({
+        checkedOutAt: new Date(),
+        checkoutLocation: data.checkoutLocation,
+        updatedAt: new Date(),
+      })
+      .where(eq(jobApplications.id, applicationId))
+      .returning();
+
+    return updatedApplication;
+  }
+
+  // Complete job (by job poster)
+  static async completeJob(
+    applicationId: string,
+    userId: string,
+    data: CompleteJobData
+  ) {
+    return await db.transaction(async (tx) => {
+      const application = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.id, applicationId),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          jobPost: {
+            with: {
+              user: { columns: { id: true, name: true } }
+            }
+          },
+          healthcareUser: {
+            columns: { id: true, name: true }
+          }
+        }
+      });
+
+      if (!application) {
+        throw new Error('Application not found');
+      }
+
+      if (application.jobPost.userId !== userId) {
+        throw new Error('Access denied');
+      }
+
+      if (application.status !== 'accepted') {
+        throw new Error('Job is not in progress');
+      }
+
+      if (!application.checkedOutAt) {
+        throw new Error('Healthcare worker must check out first');
+      }
+
+      if (application.completedAt) {
+        throw new Error('Job already completed');
+      }
+
+      // Update application
+      const [updatedApplication] = await tx
+        .update(jobApplications)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+          completedBy: userId,
+          completionNotes: data.completionNotes,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobApplications.id, applicationId))
+        .returning();
+
+      // Update job post status
+      await tx
+        .update(jobPosts)
+        .set({
+          status: 'completed',
+          updatedAt: new Date(),
+        })
+        .where(eq(jobPosts.id, application.jobPostId));
+
+      // Notify healthcare worker
+      await NotificationService.createFromTemplate(
+        'JOB_COMPLETED',
+        application.healthcareUserId,
+        {
+          jobTitle: application.jobPost.title,
+          jobPostId: application.jobPostId,
+        },
+        {
+          jobPostId: application.jobPostId,
+          jobApplicationId: application.id,
+          relatedUserId: userId,
+          sendEmail: true,
+        }
+      );
+
+      return updatedApplication;
+    });
+  }
+
+  // Report healthcare worker or job poster
+  static async reportUser(
+    applicationId: string,
+    reportedBy: string,
+    data: ReportData
+  ) {
+    const application = await db.query.jobApplications.findFirst({
+      where: and(
+        eq(jobApplications.id, applicationId),
+        eq(jobApplications.isDeleted, false)
+      ),
+      with: {
+        jobPost: {
+          with: {
+            user: { columns: { id: true, name: true } }
+          }
+        },
+        healthcareUser: {
+          columns: { id: true, name: true }
+        }
+      }
+    });
+
+    if (!application) {
+      throw new Error('Application not found');
+    }
+
+    // Check if user is involved in this application
+    const isHealthcareWorker = application.healthcareUserId === reportedBy;
+    const isJobPoster = application.jobPost.userId === reportedBy;
+
+    if (!isHealthcareWorker && !isJobPoster) {
+      throw new Error('Access denied');
+    }
+
+    const [updatedApplication] = await db
+      .update(jobApplications)
+      .set({
+        reportedAt: new Date(),
+        reportReason: data.reportReason,
+        reportMessage: data.reportMessage,
+        reportedBy: reportedBy,
+        updatedAt: new Date(),
+      })
+      .where(eq(jobApplications.id, applicationId))
+      .returning();
+
+    // Create notification for admin (assuming there's an admin user or system)
+    // You would need to implement admin notification logic here
+    await NotificationService.createFromTemplate(
+      'REPORT_SUBMITTED',
+      'admin-user-id', // Replace with actual admin user ID
+      {
+        jobTitle: application.jobPost.title,
+        applicationId: application.id,
+      },
+      {
+        jobPostId: application.jobPostId,
+        jobApplicationId: application.id,
+        relatedUserId: reportedBy,
+        sendEmail: true,
+        metadata: {
+          reportReason: data.reportReason,
+          reportedUserType: isHealthcareWorker ? 'healthcare' : 'poster'
+        }
+      }
+    );
+
+    return updatedApplication;
+  }
+
+  // Get single application details
+  static async getApplication(applicationId: string, userId: string) {
+    const application = await db.query.jobApplications.findFirst({
+      where: and(
+        eq(jobApplications.id, applicationId),
+        eq(jobApplications.isDeleted, false)
+      ),
+      with: {
+        jobPost: {
+          with: {
+            user: {
+              columns: { id: true, name: true, email: true }
+            }
+          }
+        },
+        healthcareUser: {
+          columns: { id: true, name: true, email: true },
+          with: {
+            healthcareProfile: {
+              columns: {
+                fullName: true,
+                nationality: true,
+                dateOfBirth: true,
+                experience: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!application) {
+      throw new Error('Application not found');
+    }
+
+    // Check if user has access to this application
+    const hasAccess = 
+      application.healthcareUserId === userId || 
+      application.jobPost.userId === userId;
+
+    if (!hasAccess) {
+      throw new Error('Access denied');
+    }
+
+    return application;
+  }
+
+  // Additional methods to add to JobApplicationService
+
+  static async getAllUserJobApplications(userId: string, filters: ApplicationFilters = {}) {
+    const { page = 1, limit = 10, status } = filters;
+    const offset = (page - 1) * limit;
+  
+    // First get all job post IDs for this user
+    const userJobPosts = await db
+      .select({ id: jobPosts.id })
+      .from(jobPosts)
+      .where(and(
+        eq(jobPosts.userId, userId),
+        eq(jobPosts.isDeleted, false)
+      ));
+  
+    const jobPostIds = userJobPosts.map(job => job.id);
+  
+    if (jobPostIds.length === 0) {
+      return {
+        data: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrev: false
+        }
+      };
+    }
+  
+    const conditions = [
+      eq(jobApplications.isDeleted, false),
+    ];
+  
+    // Add job post ID filter using inArray instead of or
+    conditions.push(inArray(jobApplications.jobPostId, jobPostIds));
+  
+    if (status) {
+      conditions.push(eq(jobApplications.status, status as any));
+    }
+  
+    const [totalCount] = await db
+      .select({ count: count() })
+      .from(jobApplications)
+      .where(and(...conditions));
+  
+    const results = await db.query.jobApplications.findMany({
+      where: and(...conditions),
+      with: {
+        healthcareUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          }
+        },
+        jobPost: {
+          columns: {
+            id: true,
+            title: true,
+            type: true,
+            jobDate: true,
+            startTime: true,
+            endTime: true,
+          }
+        }
+      },
+      orderBy: [desc(jobApplications.createdAt)],
+      limit,
+      offset
+    });
+  
+    return {
+      data: results,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / limit),
+        hasNext: page < Math.ceil(totalCount.count / limit),
+        hasPrev: page > 1
+      }
+    };
+  }
+  
+  // Get application statistics for dashboard
+  static async getApplicationStats(userId: string, role: 'healthcare' | 'poster') {
+    if (role === 'healthcare') {
+      // Stats for healthcare worker
+      const [
+        totalApplications,
+        pendingApplications,
+        acceptedApplications,
+        completedApplications
+      ] = await Promise.all([
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            eq(jobApplications.healthcareUserId, userId),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            eq(jobApplications.healthcareUserId, userId),
+            eq(jobApplications.status, 'pending'),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            eq(jobApplications.healthcareUserId, userId),
+            eq(jobApplications.status, 'accepted'),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            eq(jobApplications.healthcareUserId, userId),
+            eq(jobApplications.status, 'completed'),
+            eq(jobApplications.isDeleted, false)
+          ))
+      ]);
+  
+      return {
+        total: totalApplications[0].count,
+        pending: pendingApplications[0].count,
+        accepted: acceptedApplications[0].count,
+        completed: completedApplications[0].count
+      };
+    } else {
+      // Stats for job poster - get applications across all their jobs
+      const userJobPosts = await db
+        .select({ id: jobPosts.id })
+        .from(jobPosts)
+        .where(and(
+          eq(jobPosts.userId, userId),
+          eq(jobPosts.isDeleted, false)
+        ));
+  
+      const jobPostIds = userJobPosts.map(job => job.id);
+  
+      if (jobPostIds.length === 0) {
+        return {
+          total: 0,
+          pending: 0,
+          accepted: 0,
+          completed: 0
+        };
+      }
+  
+      const [
+        totalApplications,
+        pendingApplications,
+        acceptedApplications,
+        completedApplications
+      ] = await Promise.all([
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            inArray(jobApplications.jobPostId, jobPostIds),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            inArray(jobApplications.jobPostId, jobPostIds),
+            eq(jobApplications.status, 'pending'),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            inArray(jobApplications.jobPostId, jobPostIds),
+            eq(jobApplications.status, 'accepted'),
+            eq(jobApplications.isDeleted, false)
+          )),
+        db.select({ count: count() })
+          .from(jobApplications)
+          .where(and(
+            inArray(jobApplications.jobPostId, jobPostIds),
+            eq(jobApplications.status, 'completed'),
+            eq(jobApplications.isDeleted, false)
+          ))
+      ]);
+  
+      return {
+        total: totalApplications[0].count,
+        pending: pendingApplications[0].count,
+        accepted: acceptedApplications[0].count,
+        completed: completedApplications[0].count
+      };
+    }
+    } 
+}
