@@ -63,11 +63,11 @@ export class JobApplicationService {
           }
         }
       });
-
+  
       if (!jobPost) {
         throw new Error('Job post not found or no longer available');
       }
-
+  
       // Check if job date is in the future
       const jobDate = new Date(jobPost.jobDate);
       const today = new Date();
@@ -76,7 +76,7 @@ export class JobApplicationService {
       if (jobDate < today) {
         throw new Error('Cannot apply for past jobs');
       }
-
+  
       // Check if user already applied
       const existingApplication = await tx.query.jobApplications.findFirst({
         where: and(
@@ -85,11 +85,11 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         )
       });
-
+  
       if (existingApplication) {
         throw new Error('You have already applied for this job');
       }
-
+  
       // Check if job already has an accepted application
       const acceptedApplication = await tx.query.jobApplications.findFirst({
         where: and(
@@ -98,21 +98,21 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         )
       });
-
+  
       if (acceptedApplication) {
         throw new Error('This job already has an accepted applicant');
       }
-
+  
       // Get healthcare user details
       const healthcareUser = await tx.query.users.findFirst({
         where: eq(users.id, data.healthcareUserId),
         columns: { id: true, name: true, email: true, role: true }
       });
-
+  
       if (!healthcareUser || healthcareUser.role !== 'healthcare') {
         throw new Error('Invalid healthcare user');
       }
-
+  
       // Create application
       const [application] = await tx
         .insert(jobApplications)
@@ -123,24 +123,35 @@ export class JobApplicationService {
           status: 'pending',
         })
         .returning();
-
-      // Create notification for job poster
-      await NotificationService.createFromTemplate(
-        'JOB_APPLICATION_RECEIVED',
-        jobPost.userId,
-        {
-          jobTitle: jobPost.title,
-          jobPostId: jobPost.id,
-          applicantName: healthcareUser.name,
-        },
-        {
-          jobPostId: jobPost.id,
-          jobApplicationId: application.id,
-          relatedUserId: healthcareUser.id,
-          sendEmail: true,
-        }
-      );
-
+  
+      // IMPORTANT: Check if application was created successfully
+      if (!application || !application.id) {
+        throw new Error('Failed to create application');
+      }
+  
+      // Create notification AFTER application is created and we have the ID
+      try {
+        await NotificationService.createFromTemplate(
+          'JOB_APPLICATION_RECEIVED',
+          jobPost.userId,
+          {
+            jobTitle: jobPost.title,
+            jobPostId: jobPost.id,
+            applicantName: healthcareUser.name,
+          },
+          {
+            jobPostId: jobPost.id,
+            jobApplicationId: application.id, // Now we have a valid application.id
+            relatedUserId: healthcareUser.id,
+            sendEmail: true,
+          }
+        );
+      } catch (notificationError) {
+        console.error('Failed to create notification:', notificationError);
+        // Don't fail the application creation if notification fails
+        // The application is still valid even if notification fails
+      }
+  
       return application;
     });
   }
