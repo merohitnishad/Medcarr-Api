@@ -1,5 +1,5 @@
 // jobPostService.ts - Clean, simplified version
-import { healthcareProfiles } from "../../db/schemas/usersSchema.js";
+import { healthcareProfiles, users } from "../../db/schemas/usersSchema.js";
 import { db } from "../../db/index.js";
 import { 
   jobPosts, 
@@ -7,6 +7,7 @@ import {
   jobPostLanguages, 
   jobPostPreferences,
 } from '../../db/schemas/jobSchema.js';
+import { jobApplications } from '../../db/schemas/jobApplicationSchema.js'; // Add this import
 import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
 import { eq, and, desc, count, asc, gte, ne, lt } from 'drizzle-orm';
 
@@ -325,7 +326,6 @@ export class JobPostService {
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
-      // Only show jobs with future dates
       gte(jobPosts.jobDate, today)
     ];
   
@@ -352,33 +352,45 @@ export class JobPostService {
       orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)]
     });
   
-    // If userId is provided, get user's postcode and sort by distance
+    // If userId is provided (healthcare user), check application status and handle distance
     if (userId) {
+      // Get user's applications for all these jobs in one query
+      const jobIds = results.map(job => job.id);
+      const userApplications = await db
+        .select({ jobPostId: jobApplications.jobPostId })
+        .from(jobApplications)
+        .where(and(
+          eq(jobApplications.healthcareUserId, userId),
+          eq(jobApplications.isDeleted, false),
+          jobApplications.jobPostId // This should use 'in' operator with jobIds
+        ));
+  
+      const appliedJobIds = new Set(userApplications.map(app => app.jobPostId));
+  
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
       
       if (userPostcode) {
-        const resultsWithDistance = [];
+        const resultsWithDistanceAndStatus = [];
         
-        // Process distances sequentially to avoid API rate limiting
         for (const job of results) {
           const distance = await this.calculateDistanceWithUnits(userPostcode, job.postcode);
-          resultsWithDistance.push({
+          resultsWithDistanceAndStatus.push({
             ...job,
-            distance: distance
+            distance: distance,
+            applied: appliedJobIds.has(job.id) // Add applied status
           });
         }
   
-        // Sort by distance (shortest first) - using km for sorting
-        resultsWithDistance.sort((a, b) => a.distance.km - b.distance.km);
-        
-        // Apply pagination after sorting
-        results = resultsWithDistance.slice(offset, offset + limit);
+        resultsWithDistanceAndStatus.sort((a, b) => a.distance.km - b.distance.km);
+        results = resultsWithDistanceAndStatus.slice(offset, offset + limit);
       } else {
-        // Apply pagination if no postcode found
-        results = results.slice(offset, offset + limit);
+        // Add applied status even without postcode
+        results = results.slice(offset, offset + limit).map(job => ({
+          ...job,
+          applied: appliedJobIds.has(job.id)
+        }));
       }
     } else {
-      // Apply pagination if no userId
       results = results.slice(offset, offset + limit);
     }
   
@@ -399,44 +411,108 @@ export class JobPostService {
   static async getUserJobPosts(userId: string, filters: JobPostFilters = {}) {
     const { page = 1, limit = 10 } = filters;
     const offset = (page - 1) * limit;
-
+  
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of today
-
+    today.setHours(0, 0, 0, 0);
+  
     const conditions = [
-        eq(jobPosts.userId, userId),
-        eq(jobPosts.isDeleted, false),
-        eq(jobPosts.status, 'open'), // Status must be open
-        gte(jobPosts.jobDate, today), // Job date must be after today
+      eq(jobPosts.userId, userId),
+      eq(jobPosts.isDeleted, false),
+      eq(jobPosts.status, 'open'),
+      gte(jobPosts.jobDate, today),
     ];
-
+  
     const [totalCount] = await db
-        .select({ count: count() })
-        .from(jobPosts)
-        .where(and(...conditions));
-
+      .select({ count: count() })
+      .from(jobPosts)
+      .where(and(...conditions));
+  
     const results = await db.query.jobPosts.findMany({
-        where: and(...conditions),
-        with: {
-            careNeedsRelation: { with: { careNeed: true } },
-            languagesRelation: { with: { language: true } },
-            preferencesRelation: { with: { preference: true } }
-        },
-        orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
-        limit,
-        offset
+      where: and(...conditions),
+      with: {
+        careNeedsRelation: { with: { careNeed: true } },
+        languagesRelation: { with: { language: true } },
+        preferencesRelation: { with: { preference: true } }
+      },
+      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
+      limit,
+      offset
     });
-
-    return {
-        data: results,
-        pagination: {
-            page,
-            limit,
-            total: totalCount.count,
-            totalPages: Math.ceil(totalCount.count / limit),
-            hasNext: page < Math.ceil(totalCount.count / limit),
-            hasPrev: page > 1
+  
+    // Get job applications for all jobs with healthcare user details
+    const jobIds = results.map(job => job.id);
+    
+    if (jobIds.length > 0) {
+      const applications = await db
+        .select({
+          jobPostId: jobApplications.jobPostId,
+          healthcareUserId: jobApplications.healthcareUserId,
+          healthcareUserName: users.name,
+          healthcareUserImage: healthcareProfiles.image,
+          status: jobApplications.status
+        })
+        .from(jobApplications)
+        .innerJoin(users, eq(jobApplications.healthcareUserId, users.id))
+        .innerJoin(healthcareProfiles, eq(users.id, healthcareProfiles.userId))
+        .where(and(
+          eq(jobApplications.isDeleted, false),
+          // Use 'in' operator with jobIds array
+          // Note: You'll need to import 'inArray' from drizzle-orm
+          // import { eq, and, desc, count, asc, gte, ne, lt, inArray } from 'drizzle-orm';
+          // inArray(jobApplications.jobPostId, jobIds)
+        ));
+  
+      // Group applications by job
+      const applicationsByJob = applications.reduce((acc, app) => {
+        if (!acc[app.jobPostId]) {
+          acc[app.jobPostId] = [];
         }
+        acc[app.jobPostId].push({
+          id: app.healthcareUserId,
+          name: app.healthcareUserName,
+          image: app.healthcareUserImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(app.healthcareUserName)}&background=random`,
+          status: app.status
+        });
+        return acc;
+      }, {} as Record<string, any[]>);
+  
+      // Add applicants and totalApplications to each job
+      const resultsWithApplications = results.map(job => ({
+        ...job,
+        applicants: applicationsByJob[job.id] || [],
+        totalApplications: applicationsByJob[job.id]?.length || 0
+      }));
+  
+      return {
+        data: resultsWithApplications,
+        pagination: {
+          page,
+          limit,
+          total: totalCount.count,
+          totalPages: Math.ceil(totalCount.count / limit),
+          hasNext: page < Math.ceil(totalCount.count / limit),
+          hasPrev: page > 1
+        }
+      };
+    }
+  
+    // If no jobs, return original results with empty applicants
+    const resultsWithApplications = results.map(job => ({
+      ...job,
+      applicants: [],
+      totalApplications: 0
+    }));
+  
+    return {
+      data: resultsWithApplications,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / limit),
+        hasNext: page < Math.ceil(totalCount.count / limit),
+        hasPrev: page > 1
+      }
     };
   }
 
