@@ -9,7 +9,7 @@ import {
 } from '../../db/schemas/jobSchema.js';
 import { jobApplications } from '../../db/schemas/jobApplicationSchema.js'; // Add this import
 import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc, gte, ne, lt } from 'drizzle-orm';
+import { eq, and, desc, count, asc, gte, ne, lt, inArray } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -356,16 +356,20 @@ export class JobPostService {
     if (userId) {
       // Get user's applications for all these jobs in one query
       const jobIds = results.map(job => job.id);
-      const userApplications = await db
-        .select({ jobPostId: jobApplications.jobPostId })
-        .from(jobApplications)
-        .where(and(
-          eq(jobApplications.healthcareUserId, userId),
-          eq(jobApplications.isDeleted, false),
-          jobApplications.jobPostId // This should use 'in' operator with jobIds
-        ));
+      let appliedJobIds = new Set<string>();
+      
+      if (jobIds.length > 0) {
+        const userApplications = await db
+          .select({ jobPostId: jobApplications.jobPostId })
+          .from(jobApplications)
+          .where(and(
+            eq(jobApplications.healthcareUserId, userId),
+            eq(jobApplications.isDeleted, false),
+            inArray(jobApplications.jobPostId, jobIds)
+          ));
   
-      const appliedJobIds = new Set(userApplications.map(app => app.jobPostId));
+        appliedJobIds = new Set(userApplications.map(app => app.jobPostId));
+      }
   
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
       
