@@ -160,7 +160,7 @@ export class JobApplicationService {
   static async getJobApplications(jobPostId: string, userId: string, filters: ApplicationFilters = {}) {
     const { page = 1, limit = 10, status } = filters;
     const offset = (page - 1) * limit;
-
+  
     // Verify job ownership
     const jobPost = await db.query.jobPosts.findFirst({
       where: and(
@@ -169,25 +169,25 @@ export class JobApplicationService {
         eq(jobPosts.isDeleted, false)
       )
     });
-
+  
     if (!jobPost) {
       throw new Error('Job post not found or access denied');
     }
-
+  
     const conditions = [
       eq(jobApplications.jobPostId, jobPostId),
       eq(jobApplications.isDeleted, false),
     ];
-
+  
     if (status) {
       conditions.push(eq(jobApplications.status, status as any));
     }
-
+  
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobApplications)
       .where(and(...conditions));
-
+  
     const results = await db.query.jobApplications.findMany({
       where: and(...conditions),
       with: {
@@ -204,6 +204,22 @@ export class JobApplicationService {
                 nationality: true,
                 dateOfBirth: true,
                 experience: true,
+                image: true,
+                postcode: true,
+                gender: true,
+                professionalTitle: true,
+              },
+              with: {
+                specialitiesRelation: {
+                  with: {
+                    speciality: true
+                  }
+                },
+                languagesRelation: {
+                  with: {
+                    language: true
+                  }
+                }
               }
             }
           }
@@ -214,6 +230,7 @@ export class JobApplicationService {
             title: true,
             type: true,
             jobDate: true,
+            postcode: true, // Add postcode to calculate distance
           }
         }
       },
@@ -221,9 +238,44 @@ export class JobApplicationService {
       limit,
       offset
     });
-
+  
+    // Calculate distances for each healthcare professional
+    const resultsWithDistance = [];
+    for (const application of results) {
+      const healthcarePostcode = application.healthcareUser.healthcareProfile?.postcode;
+      const jobPostcode = application.jobPost.postcode;
+      
+      let distance = { km: 999, miles: 999 };
+      if (healthcarePostcode && jobPostcode) {
+        distance = await this.calculateDistanceWithUnits(jobPostcode, healthcarePostcode);
+      }
+      
+      // Transform the healthcare profile data
+      const transformedApplication = {
+        ...application,
+        healthcareUser: {
+          ...application.healthcareUser,
+          healthcareProfile: {
+            ...application.healthcareUser.healthcareProfile,
+            specialities: application.healthcareUser.healthcareProfile?.specialitiesRelation?.map(rel => rel.speciality) || [],
+            languages: application.healthcareUser.healthcareProfile?.languagesRelation?.map(rel => rel.language) || [],
+            distance: distance
+          }
+        }
+      };
+      
+      // Remove the relation fields
+    // Remove the relation fields
+    if (transformedApplication.healthcareUser.healthcareProfile) {
+      delete (transformedApplication.healthcareUser.healthcareProfile as any).specialitiesRelation;
+      delete (transformedApplication.healthcareUser.healthcareProfile as any).languagesRelation;
+    }
+      
+      resultsWithDistance.push(transformedApplication);
+    }
+  
     return {
-      data: results,
+      data: resultsWithDistance,
       pagination: {
         page,
         limit,
@@ -1005,4 +1057,79 @@ export class JobApplicationService {
       };
     }
     } 
+
+    private static async calculateDistanceWithUnits(postcode1: string, postcode2: string): Promise<{km: number, miles: number}> {
+      try {
+        const [coord1, coord2] = await Promise.all([
+          this.getPostcodeCoordinates(postcode1),
+          this.getPostcodeCoordinates(postcode2)
+        ]);
+  
+        if (!coord1 || !coord2) {
+          return { km: 999, miles: 999 };
+        }
+  
+        const distanceKm = this.calculateHaversineDistance(
+          coord1.latitude, coord1.longitude,
+          coord2.latitude, coord2.longitude,
+          6371 // Earth's radius in km
+        );
+  
+        const distanceMiles = this.calculateHaversineDistance(
+          coord1.latitude, coord1.longitude,
+          coord2.latitude, coord2.longitude,
+          3959 // Earth's radius in miles
+        );
+  
+        return {
+          km: Math.round(distanceKm * 10) / 10,
+          miles: Math.round(distanceMiles * 10) / 10
+        };
+      } catch (error) {
+        console.error('Error calculating distance:', error);
+        return { km: 999, miles: 999 };
+      }
+    }
+  
+    // Get coordinates from postcodes.io
+    private static async getPostcodeCoordinates(postcode: string): Promise<{latitude: number, longitude: number} | null> {
+      try {
+        const cleanPostcode = postcode.replace(/\s+/g, '').toUpperCase();
+        const response = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`);
+        
+        if (!response.ok) {
+          return null;
+        }
+    
+        const data = await response.json();
+        if (data.result) {
+          return {
+            latitude: data.result.latitude,
+            longitude: data.result.longitude
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error('Error fetching postcode coordinates:', error);
+        return null;
+      }
+    }
+    
+    // Updated Haversine formula to accept radius parameter
+    private static calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number, earthRadius: number = 6371): number {
+      const dLat = this.toRadians(lat2 - lat1);
+      const dLon = this.toRadians(lon2 - lon1);
+      
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return earthRadius * c;
+    }
+  
+    private static toRadians(degrees: number): number {
+      return degrees * (Math.PI / 180);
+    }
+  
 }
