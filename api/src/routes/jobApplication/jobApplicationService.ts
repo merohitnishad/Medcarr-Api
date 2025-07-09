@@ -2,7 +2,7 @@
 import { db } from "../../db/index.js";
 import { jobApplications } from "../../db/schemas/jobApplicationSchema.js";
 import { jobPosts } from "../../db/schemas/jobSchema.js";
-import { users } from "../../db/schemas/usersSchema.js";
+import { healthcareProfiles, users } from "../../db/schemas/usersSchema.js";
 import { eq, and, desc, count, asc, ne, or, inArray } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
 
@@ -196,32 +196,6 @@ export class JobApplicationService {
             id: true,
             name: true,
             email: true,
-          },
-          with: {
-            healthcareProfile: {
-              columns: {
-                fullName: true,
-                nationality: true,
-                dateOfBirth: true,
-                experience: true,
-                image: true,
-                postcode: true,
-                gender: true,
-                professionalTitle: true,
-              },
-              with: {
-                specialitiesRelation: {
-                  with: {
-                    speciality: true
-                  }
-                },
-                languagesRelation: {
-                  with: {
-                    language: true
-                  }
-                }
-              }
-            }
           }
         },
         jobPost: {
@@ -239,37 +213,50 @@ export class JobApplicationService {
       offset
     });
   
-    // Calculate distances for each healthcare professional
+    // Get healthcare profile data separately for each application
     const resultsWithDistance = [];
     for (const application of results) {
-      const healthcarePostcode = application.healthcareUser.healthcareProfile?.postcode;
-      const jobPostcode = application.jobPost.postcode;
+      const healthcareProfile = await db.query.healthcareProfiles.findFirst({
+        where: eq(healthcareProfiles.userId, application.healthcareUser.id),
+        with: {
+          specialitiesRelation: {
+            with: {
+              speciality: true
+            }
+          },
+          languagesRelation: {
+            with: {
+              language: true
+            }
+          }
+        }
+      });
       
       let distance = { km: 999, miles: 999 };
-      if (healthcarePostcode && jobPostcode) {
-        distance = await this.calculateDistanceWithUnits(jobPostcode, healthcarePostcode);
+      if (healthcareProfile?.postcode && application.jobPost.postcode) {
+        distance = await this.calculateDistanceWithUnits(application.jobPost.postcode, healthcareProfile.postcode);
       }
       
-      // Transform the healthcare profile data
+      // Transform the data
       const transformedApplication = {
         ...application,
         healthcareUser: {
           ...application.healthcareUser,
-          healthcareProfile: {
-            ...application.healthcareUser.healthcareProfile,
-            specialities: application.healthcareUser.healthcareProfile?.specialitiesRelation?.map(rel => rel.speciality) || [],
-            languages: application.healthcareUser.healthcareProfile?.languagesRelation?.map(rel => rel.language) || [],
+          healthcareProfile: healthcareProfile ? {
+            fullName: healthcareProfile.fullName,
+            nationality: healthcareProfile.nationality,
+            dateOfBirth: healthcareProfile.dateOfBirth,
+            experience: healthcareProfile.experience,
+            image: healthcareProfile.image,
+            postcode: healthcareProfile.postcode,
+            gender: healthcareProfile.gender,
+            professionalTitle: healthcareProfile.professionalTitle,
+            specialities: healthcareProfile.specialitiesRelation?.map(rel => rel.speciality) || [],
+            languages: healthcareProfile.languagesRelation?.map(rel => rel.language) || [],
             distance: distance
-          }
+          } : null
         }
       };
-      
-      // Remove the relation fields
-    // Remove the relation fields
-    if (transformedApplication.healthcareUser.healthcareProfile) {
-      delete (transformedApplication.healthcareUser.healthcareProfile as any).specialitiesRelation;
-      delete (transformedApplication.healthcareUser.healthcareProfile as any).languagesRelation;
-    }
       
       resultsWithDistance.push(transformedApplication);
     }
