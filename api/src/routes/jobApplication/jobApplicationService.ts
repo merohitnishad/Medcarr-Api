@@ -339,6 +339,7 @@ export class JobApplicationService {
   }
 
   // Accept or reject application
+ // Updated updateApplicationStatus method - Remove auto-rejection logic
   static async updateApplicationStatus(
     applicationId: string,
     userId: string,
@@ -379,32 +380,6 @@ export class JobApplicationService {
         throw new Error('Application has already been processed');
       }
 
-      // If accepting, reject all other pending applications for this job
-      if (data.status === 'accepted') {
-        await tx
-          .update(jobApplications)
-          .set({
-            status: 'rejected',
-            respondedAt: new Date(),
-            responseMessage: 'Another candidate was selected',
-            updatedAt: new Date(),
-          })
-          .where(and(
-            eq(jobApplications.jobPostId, application.jobPostId),
-            eq(jobApplications.status, 'pending'),
-            ne(jobApplications.id, applicationId)
-          ));
-
-        // Update job post status to indicate it has an accepted applicant
-        await tx
-          .update(jobPosts)
-          .set({
-            status: 'approved',
-            updatedAt: new Date(),
-          })
-          .where(eq(jobPosts.id, application.jobPostId));
-      }
-
       // Update the application
       const [updatedApplication] = await tx
         .update(jobApplications)
@@ -416,6 +391,17 @@ export class JobApplicationService {
         })
         .where(eq(jobApplications.id, applicationId))
         .returning();
+
+      // Only update job post status if accepting (but don't reject other applications yet)
+      if (data.status === 'accepted') {
+        await tx
+          .update(jobPosts)
+          .set({
+            status: 'approved',
+            updatedAt: new Date(),
+          })
+          .where(eq(jobPosts.id, application.jobPostId));
+      }
 
       // Create notification for healthcare worker
       const templateKey = data.status === 'accepted' ? 'APPLICATION_ACCEPTED' : 'APPLICATION_REJECTED';
@@ -462,24 +448,24 @@ export class JobApplicationService {
           }
         }
       });
-
+  
       if (!application) {
         throw new Error('Application not found');
       }
-
+  
       // Check if user has permission to cancel
       const isHealthcareWorker = application.healthcareUserId === userId;
       const isJobPoster = application.jobPost.userId === userId;
-
+  
       if (!isHealthcareWorker && !isJobPoster) {
         throw new Error('Access denied');
       }
-
+  
       // Can only cancel pending or accepted applications
       if (!['pending', 'accepted'].includes(application.status)) {
         throw new Error('Application cannot be cancelled at this stage');
       }
-
+  
       // Update application
       const [updatedApplication] = await tx
         .update(jobApplications)
@@ -493,22 +479,33 @@ export class JobApplicationService {
         })
         .where(eq(jobApplications.id, applicationId))
         .returning();
-
-      // If this was an accepted application, reopen the job
-      if (application.status === 'accepted') {
-        await tx
-          .update(jobPosts)
-          .set({
-            status: 'open',
-            updatedAt: new Date(),
-          })
-          .where(eq(jobPosts.id, application.jobPostId));
+  
+      // If this was an accepted application that was cancelled before check-in, reopen the job
+      if (application.status === 'accepted' && !application.checkedInAt) {
+        // Check if there are other pending applications
+        const pendingApplications = await tx.query.jobApplications.findMany({
+          where: and(
+            eq(jobApplications.jobPostId, application.jobPostId),
+            eq(jobApplications.status, 'pending'),
+            eq(jobApplications.isDeleted, false)
+          )
+        });
+  
+        // Only reopen if there are pending applications waiting
+        if (pendingApplications.length > 0) {
+          await tx
+            .update(jobPosts)
+            .set({
+              status: 'open',
+              updatedAt: new Date(),
+            })
+            .where(eq(jobPosts.id, application.jobPostId));
+        }
       }
-
+  
       // Create notification for the other party
       const notificationUserId = isHealthcareWorker ? application.jobPost.userId : application.healthcareUserId;
-      const templateKey = isHealthcareWorker ? 'JOB_CANCELLED_BY_HEALTHCARE' : 'JOB_CANCELLED_BY_POSTER';
-
+  
       await NotificationService.createFromTemplate(
         'APPLICATION_CANCELLED',
         notificationUserId,
@@ -528,7 +525,7 @@ export class JobApplicationService {
           }
         }
       );
-
+  
       return updatedApplication;
     });
   }
@@ -539,68 +536,91 @@ export class JobApplicationService {
     healthcareUserId: string,
     data: CheckinData
   ) {
-    const application = await db.query.jobApplications.findFirst({
-      where: and(
-        eq(jobApplications.id, applicationId),
-        eq(jobApplications.healthcareUserId, healthcareUserId),
-        eq(jobApplications.status, 'accepted'),
-        eq(jobApplications.isDeleted, false)
-      ),
-      with: {
-        jobPost: {
-          with: {
-            user: { columns: { id: true, name: true } }
+    return await db.transaction(async (tx) => {
+      const application = await tx.query.jobApplications.findFirst({
+        where: and(
+          eq(jobApplications.id, applicationId),
+          eq(jobApplications.healthcareUserId, healthcareUserId),
+          eq(jobApplications.status, 'accepted'),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          jobPost: {
+            with: {
+              user: { columns: { id: true, name: true } }
+            }
           }
         }
+      });
+  
+      if (!application) {
+        throw new Error('Application not found or not accepted');
       }
+  
+      // Check if already checked in
+      if (application.checkedInAt) {
+        throw new Error('Already checked in');
+      }
+  
+      // Check if it's the job date
+      const jobDate = new Date(application.jobPost.jobDate);
+      const today = new Date();
+      jobDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+  
+      if (jobDate.getTime() !== today.getTime()) {
+        throw new Error('Can only check in on the job date');
+      }
+  
+      // NOW reject all other applications since healthcare worker has actually shown up
+      await tx
+        .update(jobApplications)
+        .set({
+          status: 'rejected',
+          respondedAt: new Date(),
+          responseMessage: 'Selected candidate has started the job',
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(jobApplications.jobPostId, application.jobPostId),
+          or(
+            eq(jobApplications.status, 'pending'),
+            and(
+              eq(jobApplications.status, 'accepted'),
+              ne(jobApplications.id, applicationId)
+            )
+          )
+        ));
+  
+      // Update the checking-in application
+      const [updatedApplication] = await tx
+        .update(jobApplications)
+        .set({
+          checkedInAt: new Date(),
+          checkinLocation: data.checkinLocation,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobApplications.id, applicationId))
+        .returning();
+  
+      // Notify job poster
+      await NotificationService.createFromTemplate(
+        'JOB_STARTED',
+        application.jobPost.userId,
+        {
+          jobTitle: application.jobPost.title,
+          jobPostId: application.jobPostId,
+        },
+        {
+          jobPostId: application.jobPostId,
+          jobApplicationId: application.id,
+          relatedUserId: healthcareUserId,
+          sendEmail: true,
+        }
+      );
+  
+      return updatedApplication;
     });
-
-    if (!application) {
-      throw new Error('Application not found or not accepted');
-    }
-
-    // Check if already checked in
-    if (application.checkedInAt) {
-      throw new Error('Already checked in');
-    }
-
-    // Check if it's the job date
-    const jobDate = new Date(application.jobPost.jobDate);
-    const today = new Date();
-    jobDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-
-    if (jobDate.getTime() !== today.getTime()) {
-      throw new Error('Can only check in on the job date');
-    }
-
-    const [updatedApplication] = await db
-      .update(jobApplications)
-      .set({
-        checkedInAt: new Date(),
-        checkinLocation: data.checkinLocation,
-        updatedAt: new Date(),
-      })
-      .where(eq(jobApplications.id, applicationId))
-      .returning();
-
-    // Notify job poster
-    await NotificationService.createFromTemplate(
-      'JOB_STARTED',
-      application.jobPost.userId,
-      {
-        jobTitle: application.jobPost.title,
-        jobPostId: application.jobPostId,
-      },
-      {
-        jobPostId: application.jobPostId,
-        jobApplicationId: application.id,
-        relatedUserId: healthcareUserId,
-        sendEmail: true,
-      }
-    );
-
-    return updatedApplication;
   }
 
   // Check out from job
