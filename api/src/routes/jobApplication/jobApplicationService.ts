@@ -250,6 +250,7 @@ export class JobApplicationService {
             image: healthcareProfile.image,
             postcode: healthcareProfile.postcode,
             gender: healthcareProfile.gender,
+            preferred_time: healthcareProfile.preferredTime,
             professionalTitle: healthcareProfile.professionalTitle,
             specialities: healthcareProfile.specialitiesRelation?.map(rel => rel.speciality) || [],
             languages: healthcareProfile.languagesRelation?.map(rel => rel.language) || [],

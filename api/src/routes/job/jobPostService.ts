@@ -322,12 +322,12 @@ export class JobPostService {
   
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-  
-    const conditions = [
-      eq(jobPosts.isDeleted, false),
-      eq(jobPosts.status, 'open'),
-      gte(jobPosts.jobDate, today)
-    ];
+  const conditions = [
+    eq(jobPosts.isDeleted, false),
+    eq(jobPosts.status, 'open'),
+    eq(jobPosts.status, 'approved'),
+    gte(jobPosts.jobDate, today)
+  ];
   
     if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
     if (type) conditions.push(eq(jobPosts.type, type));
@@ -531,6 +531,7 @@ export class JobPostService {
         eq(jobPosts.userId, userId),
         eq(jobPosts.isDeleted, false),
         ne(jobPosts.status, 'open'), // Status not equal to open
+        ne(jobPosts.status, 'approved'), // Status not equal to approved
     ];
 
     const [totalCount] = await db
