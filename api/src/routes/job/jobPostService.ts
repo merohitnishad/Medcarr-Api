@@ -325,7 +325,6 @@ export class JobPostService {
   const conditions = [
     eq(jobPosts.isDeleted, false),
     eq(jobPosts.status, 'open'),
-    eq(jobPosts.status, 'approved'),
     gte(jobPosts.jobDate, today)
   ];
   
@@ -423,6 +422,7 @@ export class JobPostService {
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, 'open'),
+      eq(jobPosts.status, 'approved'),
       gte(jobPosts.jobDate, today),
     ];
   
