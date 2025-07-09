@@ -9,7 +9,7 @@ import {
 } from '../../db/schemas/jobSchema.js';
 import { jobApplications } from '../../db/schemas/jobApplicationSchema.js'; // Add this import
 import { careNeeds, languages, preferences } from '../../db/schemas/utilsSchema.js';
-import { eq, and, desc, count, asc, gte, ne, lt, inArray } from 'drizzle-orm';
+import { eq, and, desc, count, asc, gte, ne, lt, inArray, or, notInArray } from 'drizzle-orm';
 
 export interface CreateJobPostData {
   age: number;
@@ -421,8 +421,10 @@ export class JobPostService {
     const conditions = [
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
-      eq(jobPosts.status, 'open'),
-      eq(jobPosts.status, 'approved'),
+      or(
+        eq(jobPosts.status, 'open'),
+        eq(jobPosts.status, 'approved')
+      ),
       gte(jobPosts.jobDate, today),
     ];
   
@@ -530,8 +532,7 @@ export class JobPostService {
     const conditions = [
         eq(jobPosts.userId, userId),
         eq(jobPosts.isDeleted, false),
-        ne(jobPosts.status, 'open'), // Status not equal to open
-        ne(jobPosts.status, 'approved'), // Status not equal to approved
+        notInArray(jobPosts.status, ['open', 'approved']), // Status not in ['open', 'approved']
     ];
 
     const [totalCount] = await db
