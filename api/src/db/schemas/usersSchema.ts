@@ -3,6 +3,7 @@ import { pgTable, varchar, uuid, timestamp, boolean, pgEnum, text, integer, inde
 import { createInsertSchema } from 'drizzle-zod';
 import { careNeeds, languages, specialities } from './utilsSchema';
 import { reviewHelpfulVotes, reviews } from './reviewSchema';
+import { jobPosts } from './jobSchema';
 
 export const roleEnum = pgEnum('role', ['admin', 'individual', 'organization', 'healthcare']);
 export const genderEnum = pgEnum("gender", ["male", "female"]);
@@ -109,6 +110,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.id],
     references: [healthcareProfiles.userId],
   }),
+  jobPosts: many(jobPosts),
 }));
 
 // Junction tables (many-to-many)

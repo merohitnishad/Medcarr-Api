@@ -227,33 +227,33 @@ export const jobPostCareNeedsRelations = relations(jobPostCareNeeds, ({ one }) =
   }));
 
 // Update existing relations to include job posts
-export const usersRelations = relations(users, ({ one, many }) => ({
-  individualProfile: one(individualProfiles, {
-    fields: [users.id],
-    references: [individualProfiles.userId],
-  }),
-  organizationProfile: one(organizationProfiles, {
-    fields: [users.id],
-    references: [organizationProfiles.userId],
-  }),
-  healthcareProfile: one(healthcareProfiles, {
-    fields: [users.id],
-    references: [healthcareProfiles.userId],
-  }),
-  jobPosts: many(jobPosts),
-}));
+// export const usersRelations = relations(users, ({ one, many }) => ({
+//   individualProfile: one(individualProfiles, {
+//     fields: [users.id],
+//     references: [individualProfiles.userId],
+//   }),
+//   organizationProfile: one(organizationProfiles, {
+//     fields: [users.id],
+//     references: [organizationProfiles.userId],
+//   }),
+//   healthcareProfile: one(healthcareProfiles, {
+//     fields: [users.id],
+//     references: [healthcareProfiles.userId],
+//   }),
+//   jobPosts: many(jobPosts),
+// }));
 
-export const careNeedsRelations = relations(careNeeds, ({ many }) => ({
-  jobPostCareNeeds: many(jobPostCareNeeds),
-}));
+// export const careNeedsRelations = relations(careNeeds, ({ many }) => ({
+//   jobPostCareNeeds: many(jobPostCareNeeds),
+// }));
 
-export const languagesRelations = relations(languages, ({ many }) => ({
-  jobPostLanguages: many(jobPostLanguages),
-}));
+// export const languagesRelations = relations(languages, ({ many }) => ({
+//   jobPostLanguages: many(jobPostLanguages),
+// }));
 
-export const preferencesRelations = relations(preferences, ({ many }) => ({
-  jobPostPreferences: many(jobPostPreferences),
-}));
+// export const preferencesRelations = relations(preferences, ({ many }) => ({
+//   jobPostPreferences: many(jobPostPreferences),
+// }));
 
 // Zod Schemas for validation
 export const createJobPostSchema = createInsertSchema(jobPosts).omit({
