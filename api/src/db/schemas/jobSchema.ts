@@ -19,6 +19,8 @@ import {
   organizationProfiles,
   healthcareProfiles,
 } from "./usersSchema";
+import { reviews } from "./reviewSchema";
+// import { reviews } from "./reviewSchema";
 
 // Enums for job post
 export const jobTypeEnum = pgEnum("job_type", ["oneDay", "weekly"]);
@@ -187,6 +189,8 @@ export const jobPostsRelations = relations(jobPosts, ({ one, many }) => ({
   careNeedsRelation: many(jobPostCareNeeds),
   languagesRelation: many(jobPostLanguages),
   preferencesRelation: many(jobPostPreferences),
+
+  reviews: many(reviews),
 }));
 
 export const jobPostCareNeedsRelations = relations(jobPostCareNeeds, ({ one }) => ({

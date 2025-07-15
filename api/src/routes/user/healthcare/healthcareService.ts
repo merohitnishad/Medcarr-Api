@@ -5,8 +5,9 @@ import {
   specialities,
   languages,
 } from "../../../db/schemas/utilsSchema.js";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, count } from "drizzle-orm";
 import { S3Service } from "../../../utils/s3UploadService.js";
+import { ReviewService } from "../../review/reviewService.js";
 
 export interface User {
   id: string;
@@ -40,8 +41,26 @@ export interface HealthcareProfile {
   // Include related data
   specialities?: Array<{ id: string; name: string }>;
   languages?: Array<{ id: string; name: string; code?: string }>;
-  bankDetails?: BankDetails | null; // ADD THIS LINE
-
+  bankDetails?: BankDetails | null;
+  // ADD THESE LINES - Review statistics
+  reviewStats?: {
+    totalReviews: number;
+    averageRating: number;
+    ratingDistribution: {
+      1: number;
+      2: number;
+      3: number;
+      4: number;
+      5: number;
+    };
+    categoryAverages: {
+      professionalism: number;
+      punctuality: number;
+      qualityOfCare: number;
+      communication: number;
+    };
+    recommendationRate: number;
+  };
 }
 
 export interface UserWithProfile extends User {
@@ -85,6 +104,9 @@ export interface CreateBankDetailsData {
   accountNumber: string;
   bankName?: string;
 }
+export interface PublicHealthcareProfile extends Omit<HealthcareProfile, 'phoneNumber' | 'address' | 'bankDetails'> {
+  // Optional: Add any public-specific fields
+}
 
 export class HealthcareService {
   // Get healthcare user's basic info only
@@ -115,7 +137,8 @@ export class HealthcareService {
 
   // Get healthcare user with complete profile using relations
   static async getCompleteProfile(
-    userId: string
+    userId: string,
+    includeReviews: boolean = false
   ): Promise<UserWithProfile | null> {
     try {
       const result = await db.query.users.findFirst({
@@ -138,37 +161,40 @@ export class HealthcareService {
 
       // Transform the data to match our interface
       if (result.healthcareProfile) {
-        // pull out the relations plus the raw optional fields
         const {
           specialitiesRelation,
           languagesRelation,
           image: imageRaw,
           preferredTime: preferredTimeRaw,
           experience: experienceRaw,
-          // everything else (id, fullName, address, createdAt, etc.)
           ...restProfile
         } = result.healthcareProfile;
 
         const transformedProfile: HealthcareProfile = {
-          // copy across id, userId, fullName, professionalTitle, postcode, address, professionalSummary, phoneNumber, createdAt, updatedAt
           ...restProfile,
-
-          // normalize database nulls to undefined for optional fields
           image: imageRaw ?? undefined,
           preferredTime: preferredTimeRaw ?? undefined,
           experience: experienceRaw ?? undefined,
-
-          // build your arrays from relations
           specialities: (specialitiesRelation ?? []).map((sp) => ({
             id: sp.speciality.id,
             name: sp.speciality.name,
           })),
-
           languages: (languagesRelation ?? []).map((lang) => ({
             id: lang.language.id,
             name: lang.language.name,
           })),
         };
+
+        // Include review statistics if requested
+        if (includeReviews) {
+          try {
+            const reviewStats = await ReviewService.getReviewStats(userId);
+            transformedProfile.reviewStats = reviewStats;
+          } catch (error) {
+            console.warn("Failed to fetch review stats:", error);
+            // Continue without review stats rather than failing
+          }
+        }
 
         return {
           ...result,
@@ -180,6 +206,31 @@ export class HealthcareService {
     } catch (error) {
       console.error("Error fetching healthcare complete profile:", error);
       throw new Error("Failed to fetch complete profile");
+    }
+  }
+
+  static async getCompleteProfileWithReviews(
+    userId: string
+  ): Promise<UserWithProfile | null> {
+    try {
+      const userWithProfile = await this.getCompleteProfile(userId);
+      if (!userWithProfile?.healthcareProfile) {
+        return userWithProfile;
+      }
+
+      // Get review statistics
+      const reviewStats = await ReviewService.getReviewStats(userId);
+      
+      return {
+        ...userWithProfile,
+        healthcareProfile: {
+          ...userWithProfile.healthcareProfile,
+          reviewStats,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching complete profile with reviews:", error);
+      throw new Error("Failed to fetch complete profile with reviews");
     }
   }
 
@@ -941,6 +992,131 @@ export class HealthcareService {
       } catch (error) {
         console.error("Error fetching complete profile with bank details:", error);
         throw new Error("Failed to fetch complete profile with bank details");
+      }
+    }
+
+    static async getHealthcareProvidersWithReviews(options: {
+      limit?: number;
+      offset?: number;
+      postcode?: string;
+      specialityIds?: string[];
+      minRating?: number;
+    } = {}): Promise<{ providers: UserWithProfile[]; total: number }> {
+      try {
+        const { limit = 10, offset = 0, postcode, specialityIds, minRating } = options;
+  
+        // Build where conditions
+        const whereConditions = [
+          eq(users.role, "healthcare"),
+          eq(users.isActive, true),
+          eq(users.isDeleted, false),
+          eq(users.profileCompleted, true),
+        ];
+  
+        if (postcode) {
+          whereConditions.push(eq(healthcareProfiles.postcode, postcode));
+        }
+  
+        // Get healthcare providers
+        let query = db.query.users.findMany({
+          where: and(...whereConditions),
+          with: {
+            healthcareProfile: {
+              with: {
+                specialitiesRelation: {
+                  with: { speciality: true },
+                },
+                languagesRelation: {
+                  with: { language: true },
+                },
+              },
+            },
+          },
+          limit,
+          offset,
+        });
+  
+        const [providers, totalCount] = await Promise.all([
+          query,
+          db
+            .select({ count: count() })
+            .from(users)
+            .innerJoin(healthcareProfiles, eq(users.id, healthcareProfiles.userId))
+            .where(and(...whereConditions))
+            .then(result => result[0].count)
+        ]);
+  
+        // Transform and add review stats
+        const transformedProviders = await Promise.all(
+          providers.map(async (provider: any) => {
+            if (!provider.healthcareProfile) return provider;
+  
+            const {
+              specialitiesRelation,
+              languagesRelation,
+              image: imageRaw,
+              preferredTime: preferredTimeRaw,
+              experience: experienceRaw,
+              ...restProfile
+            } = provider.healthcareProfile;
+  
+            let reviewStats;
+            try {
+              reviewStats = await ReviewService.getReviewStats(provider.id);
+            } catch (error) {
+              console.warn(`Failed to get review stats for provider ${provider.id}:`, error);
+              reviewStats = {
+                totalReviews: 0,
+                averageRating: 0,
+                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                categoryAverages: {
+                  professionalism: 0,
+                  punctuality: 0,
+                  qualityOfCare: 0,
+                  communication: 0,
+                },
+                recommendationRate: 0,
+              };
+            }
+  
+            // Filter by minimum rating if specified
+            if (minRating && reviewStats.averageRating < minRating) {
+              return null;
+            }
+  
+            const transformedProfile: HealthcareProfile = {
+              ...restProfile,
+              image: imageRaw ?? undefined,
+              preferredTime: preferredTimeRaw ?? undefined,
+              experience: experienceRaw ?? undefined,
+              specialities: (specialitiesRelation ?? []).map((sp: any) => ({
+                id: sp.speciality.id,
+                name: sp.speciality.name,
+              })),
+              languages: (languagesRelation ?? []).map((lang: any) => ({
+                id: lang.language.id,
+                name: lang.language.name,
+              })),
+              reviewStats,
+            };
+  
+            return {
+              ...provider,
+              healthcareProfile: transformedProfile,
+            };
+          })
+        );
+  
+        // Filter out null results (providers that didn't meet rating criteria)
+        const filteredProviders = transformedProviders.filter(p => p !== null) as UserWithProfile[];
+  
+        return {
+          providers: filteredProviders,
+          total: totalCount
+        };
+      } catch (error) {
+        console.error("Error fetching healthcare providers with reviews:", error);
+        throw new Error("Failed to fetch healthcare providers");
       }
     }
   

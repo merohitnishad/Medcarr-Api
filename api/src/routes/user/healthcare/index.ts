@@ -2,7 +2,7 @@
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../../middlewares/authMiddleware.js';
 import { healthcareOnly } from '../../../middlewares/roleAuth.js';
-import { HealthcareService, CreateHealthcareProfileData, CreateBankDetailsData } from './healthcareService.js';
+import { HealthcareService, CreateHealthcareProfileData, CreateBankDetailsData, PublicHealthcareProfile } from './healthcareService.js';
 import { S3Service } from "../../../utils/s3UploadService.js";
 
 
@@ -44,8 +44,9 @@ router.get('/profile/basic', healthcareOnly, async (req: AuthenticatedRequest, r
 router.get('/profile', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
+    const includeReviews = req.query.includeReviews === 'true';
     
-    const userWithProfile = await HealthcareService.getCompleteProfile(userId);
+    const userWithProfile = await HealthcareService.getCompleteProfile(userId, includeReviews);
     
     if (!userWithProfile) {
       res.status(404).json({ 
@@ -600,5 +601,115 @@ router.get('/profile/complete-with-bank', healthcareOnly, async (req: Authentica
     return;
   }
 });
+
+router.get('/search', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10,
+      postcode,
+      specialityIds,
+      minRating
+    } = req.query;
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    const specialityIdsArray = specialityIds 
+      ? (specialityIds as string).split(',').filter(id => id.trim())
+      : undefined;
+
+    const minRatingNum = minRating ? parseFloat(minRating as string) : undefined;
+
+    const result = await HealthcareService.getHealthcareProvidersWithReviews({
+      limit: limitNum,
+      offset,
+      postcode: postcode as string,
+      specialityIds: specialityIdsArray,
+      minRating: minRatingNum
+    });
+
+    // Sanitize all provider data
+    const sanitizedProviders = result.providers.map(provider => 
+      HealthcareService.sanitizeCompleteUserData(provider)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        providers: sanitizedProviders,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: result.total,
+          pages: Math.ceil(result.total / limitNum)
+        }
+      }
+    });
+    return;
+  } catch (error) {
+    console.error('Error in search healthcare providers route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to search healthcare providers' 
+    });
+    return;
+  }
+});
+
+// Get public profile of a healthcare provider (for individuals/organizations to view)
+router.get('/public/:healthcareProviderId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { healthcareProviderId } = req.params;
+    
+    const userWithProfile = await HealthcareService.getCompleteProfileWithReviews(healthcareProviderId);
+    
+    if (!userWithProfile || !userWithProfile.healthcareProfile) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Healthcare provider not found' 
+      });
+      return;
+    }
+
+    // For public view, remove sensitive information
+    const sanitizedData = HealthcareService.sanitizeCompleteUserData(userWithProfile);
+    
+    // Create a public-safe version of the healthcare profile
+    if (sanitizedData.healthcareProfile) {
+      const {
+        phoneNumber,
+        address,
+        bankDetails,
+        ...publicProfileData
+      } = sanitizedData.healthcareProfile;
+      
+      // Return the data with the public profile
+      res.json({
+        success: true,
+        data: {
+          ...sanitizedData,
+          healthcareProfile: publicProfileData as PublicHealthcareProfile
+        }
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: sanitizedData
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get public healthcare profile route:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch healthcare provider profile' 
+    });
+    return;
+  }
+});
+
 
 export default router;

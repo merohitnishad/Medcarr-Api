@@ -15,6 +15,13 @@
       "when": 1751897236036,
       "tag": "0001_thick_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1752569961783,
+      "tag": "0002_cool_rick_jones",
+      "breakpoints": true
     }
   ]
 }

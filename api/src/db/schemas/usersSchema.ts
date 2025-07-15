@@ -2,6 +2,7 @@ import { relations } from 'drizzle-orm';
 import { pgTable, varchar, uuid, timestamp, boolean, pgEnum, text, integer, index, date } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
 import { careNeeds, languages, specialities } from './utilsSchema';
+import { reviewHelpfulVotes, reviews } from './reviewSchema';
 
 export const roleEnum = pgEnum('role', ['admin', 'individual', 'organization', 'healthcare']);
 export const genderEnum = pgEnum("gender", ["male", "female"]);
@@ -95,7 +96,7 @@ export const healthcareBankDetails = pgTable('healthcare_bank_details', {
 }));
 
 // Relations
-export const usersRelations = relations(users, ({ one }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   individualProfile: one(individualProfiles, {
     fields: [users.id],
     references: [individualProfiles.userId],
@@ -162,6 +163,7 @@ export const healthcareProfilesRelations = relations(healthcareProfiles, ({ one,
     fields: [healthcareProfiles.id],
     references: [healthcareBankDetails.healthcareProfileId],
   }),
+  reviews: many(reviews),
 }));
 
 // Junction table relations

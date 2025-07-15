@@ -13,6 +13,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { jobPosts } from "./jobSchema";
 import { users } from "./usersSchema";
+import { conversations } from "./messageSchema";
 
 // Enums for job application
 export const applicationStatusEnum = pgEnum("application_status", [
@@ -116,6 +117,10 @@ export const jobApplicationsRelations = relations(jobApplications, ({ one }) => 
     fields: [jobApplications.reportedBy],
     references: [users.id],
     relationName: "reportedApplications"
+  }),
+  conversation: one(conversations, {
+    fields: [jobApplications.id],
+    references: [conversations.jobApplicationId],
   }),
 }));
 
