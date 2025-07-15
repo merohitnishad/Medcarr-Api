@@ -15,7 +15,7 @@ const router = Router();
 // =============================
 
 // Get user's conversations
-router.get('/conversations', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const filters: ConversationFilters = {
@@ -44,7 +44,7 @@ router.get('/conversations', async (req: AuthenticatedRequest, res: Response) =>
 });
 
 // Get or create conversation for a job application
-router.get('/conversations/job-application/:applicationId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/job-application/:applicationId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { applicationId } = req.params;
     const userId = req.user!.id;
@@ -74,7 +74,7 @@ router.get('/conversations/job-application/:applicationId', async (req: Authenti
 });
 
 // Get conversation messages
-router.get('/conversations/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -111,7 +111,7 @@ router.get('/conversations/:conversationId/messages', async (req: AuthenticatedR
 });
 
 // Mark messages as read
-router.patch('/conversations/:conversationId/read', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/read', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -142,7 +142,7 @@ router.patch('/conversations/:conversationId/read', async (req: AuthenticatedReq
 });
 
 // Block/unblock conversation
-router.patch('/conversations/:conversationId/block', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/block', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -182,7 +182,7 @@ router.patch('/conversations/:conversationId/block', async (req: AuthenticatedRe
 });
 
 // Archive/unarchive conversation
-router.patch('/conversations/:conversationId/archive', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/archive', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -226,7 +226,7 @@ router.patch('/conversations/:conversationId/archive', async (req: Authenticated
 // =============================
 
 // Send a message
-router.post('/conversations/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;

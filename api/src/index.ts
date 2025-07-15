@@ -38,7 +38,7 @@ app.use('/user/common', userCommonRoutes);
 app.use('/job', jobRoutes);
 app.use('/jobApplication', jobApplicationRoutes);
 app.use('/notification', notificationRoutes);
-app.use('/message', messageRoutes);
+app.use('/conversations', messageRoutes);
 app.use('/review', reviewRoutes);
 
 // Health check endpoint
