@@ -8,6 +8,8 @@ import userCommonRoutes from './routes/user/common/index.js';
 import jobRoutes from './routes/job/index.js';
 import jobApplicationRoutes from './routes/jobApplication/index.js';
 import notificationRoutes from './routes/notification/index.js';
+import messageRoutes from './routes/message/index.js';
+import reviewRoutes from './routes/review/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -36,6 +38,8 @@ app.use('/user/common', userCommonRoutes);
 app.use('/job', jobRoutes);
 app.use('/jobApplication', jobApplicationRoutes);
 app.use('/notification', notificationRoutes);
+app.use('/message', messageRoutes);
+app.use('/review', reviewRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
