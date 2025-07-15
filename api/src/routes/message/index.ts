@@ -15,7 +15,7 @@ const router = Router();
 // =============================
 
 // Get user's conversations
-router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/conversations', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const filters: ConversationFilters = {
