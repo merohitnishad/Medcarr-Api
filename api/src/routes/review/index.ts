@@ -5,11 +5,12 @@ import {
   CreateReviewData, 
   UpdateReviewData 
 } from './reviewService.js';
+import { requireNonHealthCareAndAdmin } from '../../middlewares/roleAuth.js';
 
 const router = Router();
 
 // Create a new review for a completed job
-router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/',requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const reviewData: CreateReviewData = req.body;
@@ -74,7 +75,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // Get a specific review by ID
-router.get('/:reviewId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:reviewId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewId } = req.params;
     const currentUserId = req.user?.id;
@@ -104,7 +105,7 @@ router.get('/:reviewId', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // Update a review (only by original reviewer within time limit)
-router.put('/:reviewId', async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:reviewId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewId } = req.params;
     const userId = req.user!.id;
@@ -163,7 +164,7 @@ router.put('/:reviewId', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // Delete a review (soft delete)
-router.delete('/:reviewId', async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/:reviewId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewId } = req.params;
     const userId = req.user!.id;
@@ -195,7 +196,7 @@ router.delete('/:reviewId', async (req: AuthenticatedRequest, res: Response) => 
 });
 
 // Healthcare provider responds to a review
-router.post('/:reviewId/respond', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:reviewId/respond',requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewId } = req.params;
     const userId = req.user!.id;
@@ -244,7 +245,7 @@ router.post('/:reviewId/respond', async (req: AuthenticatedRequest, res: Respons
 });
 
 // Vote on review helpfulness
-router.post('/:reviewId/vote', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:reviewId/vote', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewId } = req.params;
     const userId = req.user!.id;
@@ -276,7 +277,7 @@ router.post('/:reviewId/vote', async (req: AuthenticatedRequest, res: Response) 
 });
 
 // Get reviews for a healthcare provider
-router.get('/healthcare/:healthcareProviderId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/healthcare/:healthcareProviderId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { healthcareProviderId } = req.params;
     const currentUserId = req.user?.id;
@@ -324,7 +325,7 @@ router.get('/healthcare/:healthcareProviderId', async (req: AuthenticatedRequest
 });
 
 // Get review statistics for a healthcare provider
-router.get('/healthcare/:healthcareProviderId/stats', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/healthcare/:healthcareProviderId/stats', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { healthcareProviderId } = req.params;
 
@@ -346,7 +347,7 @@ router.get('/healthcare/:healthcareProviderId/stats', async (req: AuthenticatedR
 });
 
 // Get reviews by a specific reviewer (individual/organization)
-router.get('/reviewer/:reviewerId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/reviewer/:reviewerId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reviewerId } = req.params;
     const currentUserId = req.user!.id;
@@ -394,7 +395,7 @@ router.get('/reviewer/:reviewerId', async (req: AuthenticatedRequest, res: Respo
 });
 
 // Check if user can review a specific job
-router.get('/can-review/:jobPostId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/can-review/:jobPostId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { jobPostId } = req.params;
     const userId = req.user!.id;

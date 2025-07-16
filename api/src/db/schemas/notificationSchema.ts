@@ -29,6 +29,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "payment_processed", // Payment related
   "report_submitted", // Report was submitted
   "system_announcement", // General system notifications
+  "new_message_received", // ADD THIS LINE - New message received
 ]);
 
 export const notificationPriorityEnum = pgEnum("notification_priority", [
@@ -197,5 +198,14 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     priority: 'urgent',
     actionUrl: '/admin/reports/{applicationId}',
     actionLabel: 'Review Report'
+  },
+  NEW_MESSAGE_RECEIVED: {
+    type: 'new_message_received',
+    title: 'New Message',
+    message: '{senderName} sent you a message about "{jobTitle}": {messagePreview}',
+    priority: 'normal',
+    actionUrl: '/messages/{conversationId}',
+    actionLabel: 'View Message'
   }
+
 };
