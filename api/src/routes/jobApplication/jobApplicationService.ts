@@ -702,9 +702,9 @@ export class JobApplicationService {
         throw new Error('Job is not in progress');
       }
 
-      if (!application.checkedOutAt) {
-        throw new Error('Healthcare worker must check out first');
-      }
+      // if (!application.checkedOutAt) {
+      //   throw new Error('Healthcare worker must check out first');
+      // }
 
       if (application.completedAt) {
         throw new Error('Job already completed');
