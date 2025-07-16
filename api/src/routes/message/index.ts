@@ -7,7 +7,7 @@ import {
   MessageFilters,
   ConversationFilters
 } from './messageService.js';
-
+import { requireNonAdmin } from '../../middlewares/roleAuth.js';
 const router = Router();
 
 // =============================
@@ -15,7 +15,7 @@ const router = Router();
 // =============================
 
 // Get user's conversations
-router.get('/conversations', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/conversations',requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const filters: ConversationFilters = {
@@ -44,7 +44,7 @@ router.get('/conversations', async (req: AuthenticatedRequest, res: Response) =>
 });
 
 // Get or create conversation for a job application
-router.get('/job-application/:applicationId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/job-application/:applicationId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { applicationId } = req.params;
     const userId = req.user!.id;
@@ -74,7 +74,7 @@ router.get('/job-application/:applicationId', async (req: AuthenticatedRequest, 
 });
 
 // Get conversation messages
-router.get('/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:conversationId/messages', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -111,7 +111,7 @@ router.get('/:conversationId/messages', async (req: AuthenticatedRequest, res: R
 });
 
 // Mark messages as read
-router.patch('/:conversationId/read', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/read',requireNonAdmin,  async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -142,7 +142,7 @@ router.patch('/:conversationId/read', async (req: AuthenticatedRequest, res: Res
 });
 
 // Block/unblock conversation
-router.patch('/:conversationId/block', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/block', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -182,7 +182,7 @@ router.patch('/:conversationId/block', async (req: AuthenticatedRequest, res: Re
 });
 
 // Archive/unarchive conversation
-router.patch('/:conversationId/archive', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:conversationId/archive', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -226,7 +226,7 @@ router.patch('/:conversationId/archive', async (req: AuthenticatedRequest, res: 
 // =============================
 
 // Send a message
-router.post('/:conversationId/messages', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:conversationId/messages', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user!.id;
@@ -289,7 +289,7 @@ router.post('/:conversationId/messages', async (req: AuthenticatedRequest, res: 
 });
 
 // Edit a message
-router.patch('/messages/:messageId', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/messages/:messageId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { messageId } = req.params;
     const userId = req.user!.id;
@@ -342,7 +342,7 @@ router.patch('/messages/:messageId', async (req: AuthenticatedRequest, res: Resp
 });
 
 // Delete a message
-router.delete('/messages/:messageId', async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/messages/:messageId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { messageId } = req.params;
     const userId = req.user!.id;
@@ -377,7 +377,7 @@ router.delete('/messages/:messageId', async (req: AuthenticatedRequest, res: Res
 // =============================
 
 // Get conversation statistics (for dashboard)
-router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/stats', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
