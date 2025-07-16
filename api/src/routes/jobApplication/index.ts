@@ -1,7 +1,7 @@
 // routes/jobApplication/index.ts - Unified job application routes for all user types
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
-import { requireHealthcareRole, requireNonHealthCare } from '../../middlewares/roleAuth.js';
+import { requireHealthcareRole, requireNonAdmin, requireNonHealthCare } from '../../middlewares/roleAuth.js';
 import { 
   JobApplicationService, 
   CreateApplicationData,
@@ -358,7 +358,7 @@ router.get('/poster/stats', requireNonHealthCare, async (req: AuthenticatedReque
 // =============================
 
 // Get specific application details
-router.get('/:applicationId', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:applicationId',requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { applicationId } = req.params;
     const userId = req.user!.id;
@@ -388,7 +388,7 @@ router.get('/:applicationId', async (req: AuthenticatedRequest, res: Response) =
 });
 
 // Cancel application (Both user types)
-router.patch('/:applicationId/cancel', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/:applicationId/cancel',requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { applicationId } = req.params;
     const userId = req.user!.id;
@@ -433,7 +433,7 @@ router.patch('/:applicationId/cancel', async (req: AuthenticatedRequest, res: Re
 });
 
 // Report user (Both user types)
-router.post('/:applicationId/report', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:applicationId/report', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { applicationId } = req.params;
     const reportedBy = req.user!.id;
