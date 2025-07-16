@@ -179,6 +179,7 @@ export class MessageService {
           senderName: sender?.name || 'Someone',
           jobTitle: conversation.jobApplication.jobPost.title,
           messagePreview: data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content,
+          conversationId: data.conversationId, // ADD THIS LINE
         },
         {
           jobPostId: conversation.jobApplication.jobPost.id,
