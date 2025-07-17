@@ -155,7 +155,8 @@ router.get('/options', requireNonAdmin, async (req: AuthenticatedRequest, res: R
       'job_cancelled_by_healthcare',
       'payment_processed',
       'report_submitted',
-      'system_announcement'
+      'system_announcement',
+      'conversation_unread_messages' // ADD THIS LINE
     ];
 
     const priorities = ['low', 'normal', 'high', 'urgent'];

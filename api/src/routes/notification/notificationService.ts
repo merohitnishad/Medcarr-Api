@@ -1,9 +1,11 @@
 // services/notificationService.ts
+import { conversations } from "../../db/schemas/messageSchema.js";
 import { db } from "../../db/index.js";
 import { notifications, NOTIFICATION_TEMPLATES, NotificationTemplate } from "../../db/schemas/notificationSchema.js";
 import { users } from "../../db/schemas/usersSchema.js";
-import { eq, and, desc, count, asc, or } from "drizzle-orm";
+import { eq, and, desc, count, asc, or, gt } from "drizzle-orm";
 import nodemailer from 'nodemailer';
+import { messages } from "../../db/schemas/messageSchema.js";
 
 export interface CreateNotificationData {
   userId: string;
@@ -392,4 +394,126 @@ export class NotificationService {
 
     return deletedNotifications.length;
   }
+
+  // Handle message notifications - create or update conversation notification
+  static async handleMessageNotification(
+    conversationId: string,
+    senderId: string,
+    recipientId: string,
+    senderName: string,
+    jobTitle: string,
+    jobPostId: string,
+    jobApplicationId: string
+  ) {
+    return await db.transaction(async (tx) => {
+      // Check if there's already an unread conversation notification for this user and conversation
+      const existingNotification = await tx.query.notifications.findFirst({
+        where: and(
+          eq(notifications.userId, recipientId),
+          eq(notifications.type, 'conversation_unread_messages'),
+          eq(notifications.isRead, false),
+          eq(notifications.isActive, true),
+          eq(notifications.isDeleted, false),
+          eq(notifications.metadata, JSON.stringify({ conversationId }))
+        )
+      });
+
+      // Count unread messages from sender in this conversation
+      const unreadCount = await this.getUnreadMessageCount(conversationId, recipientId, senderId);
+
+      if (existingNotification) {
+        // Update existing notification with new count and timestamp
+        const [updatedNotification] = await tx
+          .update(notifications)
+          .set({
+            title: 'Unread Messages',
+            message: `You have ${unreadCount} unread message(s) from ${senderName} about "${jobTitle}"`,
+            updatedAt: new Date(),
+            createdAt: new Date(), // Update timestamp to move to top
+          })
+          .where(eq(notifications.id, existingNotification.id))
+          .returning();
+
+        return updatedNotification;
+      } else {
+        // Create new notification
+        const notificationData = {
+          userId: recipientId,
+          type: 'conversation_unread_messages' as any,
+          title: 'Unread Messages',
+          message: `You have ${unreadCount} unread message(s) from ${senderName} about "${jobTitle}"`,
+          priority: 'normal' as any,
+          jobPostId,
+          jobApplicationId,
+          relatedUserId: senderId,
+          actionUrl: `/messages/${conversationId}`,
+          actionLabel: 'View Messages',
+          metadata: { conversationId, unreadCount },
+        };
+
+        const [notification] = await tx
+          .insert(notifications)
+          .values(notificationData)
+          .returning();
+
+        return notification;
+      }
+    });
+  }
+
+  // Helper method to count unread messages
+  private static async getUnreadMessageCount(
+    conversationId: string, 
+    recipientId: string, 
+    senderId: string
+  ): Promise<number> {
+    // Get the conversation to check last read timestamp
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(conversations.id, conversationId)
+    });
+
+    if (!conversation) return 0;
+
+    const lastReadAt = recipientId === conversation.jobPosterId 
+      ? conversation.jobPosterLastReadAt 
+      : conversation.healthcareLastReadAt;
+
+    const conditions = [
+      eq(messages.conversationId, conversationId),
+      eq(messages.senderId, senderId), // Only count messages from the sender
+      eq(messages.isDeleted, false),
+    ];
+
+    if (lastReadAt) {
+      conditions.push(gt(messages.createdAt, lastReadAt));
+    }
+
+    const [result] = await db
+      .select({ count: count() })
+      .from(messages)
+      .where(and(...conditions));
+
+    return result.count;
+  }
+
+  // Mark conversation notification as read when user opens conversation
+  static async markConversationNotificationAsRead(conversationId: string, userId: string) {
+    const [updatedNotification] = await db
+      .update(notifications)
+      .set({
+        isRead: true,
+        readAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.type, 'conversation_unread_messages'),
+        eq(notifications.isRead, false),
+        eq(notifications.metadata, JSON.stringify({ conversationId }))
+      ))
+      .returning();
+
+    return updatedNotification;
+  }
+
 }

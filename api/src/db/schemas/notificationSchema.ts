@@ -30,6 +30,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "report_submitted", // Report was submitted
   "system_announcement", // General system notifications
   "new_message_received", // ADD THIS LINE - New message received
+  "conversation_unread_messages", // ADD THIS NEW TYPE
 ]);
 
 export const notificationPriorityEnum = pgEnum("notification_priority", [
@@ -206,6 +207,13 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     priority: 'normal',
     actionUrl: '/messages/{conversationId}',
     actionLabel: 'View Message'
+  },
+  CONVERSATION_UNREAD_MESSAGES: {
+    type: 'conversation_unread_messages',
+    title: 'Unread Messages',
+    message: 'You have {unreadCount} unread message(s) from {senderName} about "{jobTitle}"',
+    priority: 'normal',
+    actionUrl: '/messages/{conversationId}',
+    actionLabel: 'View Messages'
   }
-
 };
