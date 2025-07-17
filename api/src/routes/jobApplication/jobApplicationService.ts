@@ -735,7 +735,7 @@ export class JobApplicationService {
       // Notify healthcare worker
       await NotificationService.createFromTemplate(
         'JOB_COMPLETED',
-        userId,
+        application.healthcareUserId,
         {
           jobTitle: application.jobPost.title,
           jobPostId: application.jobPostId,
@@ -743,7 +743,7 @@ export class JobApplicationService {
         {
           jobPostId: application.jobPostId,
           jobApplicationId: application.id,
-          relatedUserId: application.healthcareUserId,
+          relatedUserId: userId,
           sendEmail: true,
         }
       );
