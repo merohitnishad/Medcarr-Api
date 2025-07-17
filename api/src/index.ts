@@ -61,7 +61,7 @@ app.get('/health', (req, res) => {
 });
 
 // Start server
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`Server running on port ${port}`);
   console.log(`Socket.io server initialized`);
 });

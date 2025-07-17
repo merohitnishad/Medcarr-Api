@@ -2,11 +2,60 @@
 import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { db } from '../../db/index.js';
+import { users } from '../../db/schemas/usersSchema.js';
+import { eq } from 'drizzle-orm';
 import { MessageService } from '../message/messageService.js';
+
+
+// AWS Cognito configuration
+const COGNITO_REGION = process.env.COGNITO_REGION || 'eu-west-2';
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
+const COGNITO_JWKS_URI = `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`;
+
+// JWKS client for Cognito public keys
+const client = jwksClient({
+  jwksUri: COGNITO_JWKS_URI,
+  rateLimit: true,
+  jwksRequestsPerMinute: 5,
+  cache: true,
+  cacheMaxEntries: 5,
+  cacheMaxAge: 600000, // 10 minutes
+});
+
+// Promisified version of Cognito token verification
+const verifyCognitoToken = (token: string): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    const getKey = (header: any, callback: any) => {
+      client.getSigningKey(header.kid, (err, key) => {
+        if (err) {
+          callback(err);
+        } else {
+          const signingKey = key?.getPublicKey();
+          callback(null, signingKey);
+        }
+      });
+    };
+
+    jwt.verify(token, getKey, {
+      audience: process.env.COGNITO_CLIENT_ID,
+      issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`,
+      algorithms: ['RS256']
+    }, (err, decoded) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(decoded);
+      }
+    });
+  });
+};
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
   userRole?: string;
+  cognitoSub?: string;
 }
 
 interface OnlineUser {
@@ -36,59 +85,122 @@ class SocketManager {
   }
 
   private setupMiddleware() {
-    // Authentication middleware
+    // Cognito authentication middleware
     this.io.use(async (socket: AuthenticatedSocket, next) => {
       try {
-        const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+        // Get token from handshake
+        let token = socket.handshake.auth.token;
+        
+        // Also check headers as fallback
+        if (!token) {
+          const authHeader = socket.handshake.headers.authorization;
+          if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+          }
+        }
         
         if (!token) {
+          console.error('Socket auth failed: No token provided');
           return next(new Error('Authentication token required'));
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
-        socket.userId = decoded.user_id;
-        socket.userRole = decoded.role;
+        console.log('Verifying Cognito token for socket connection...');
+
+        // Verify Cognito JWT token
+        const decoded = await verifyCognitoToken(token);
         
+        // Extract user info from Cognito token
+        const cognitoSub = decoded.sub;
+        const email = decoded.email;
+        const cognitoUsername = decoded['cognito:username'] || decoded.username;
+
+        console.log('Token verified for user:', { cognitoSub, email });
+
+        // Get user from database
+        const dbUser = await db
+          .select()
+          .from(users)
+          .where(eq(users.cognitoId, cognitoSub))
+          .limit(1);
+
+        if (dbUser.length === 0) {
+          console.error('Socket auth failed: User not found in database for cognitoId:', cognitoSub);
+          return next(new Error('User not found in database'));
+        }
+
+        const user = dbUser[0];
+
+        // Attach user info to socket
+        socket.userId = user.id;
+        socket.userRole = user.role;
+        socket.cognitoSub = cognitoSub;
+        
+        console.log('Socket authentication successful for user:', user.id);
         next();
       } catch (error) {
-        next(new Error('Invalid authentication token'));
+        console.error('Socket authentication failed:', error);
+        if (error instanceof Error) {
+          next(new Error(`Authentication failed: ${error.message}`));
+        } else {
+          next(new Error('Authentication failed'));
+        }
       }
     });
   }
 
   private setupEventHandlers() {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
-      console.log(`User ${socket.userId} connected with socket ${socket.id}`);
+      console.log(`✅ User ${socket.userId} connected with socket ${socket.id}`);
       
       this.handleUserConnection(socket);
       this.setupSocketEvents(socket);
     });
   }
 
-  private handleUserConnection(socket: AuthenticatedSocket) {
+  private async handleUserConnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
     
-    // Add user to online users
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set());
-    }
-    this.userSockets.get(userId)!.add(socket.id);
-    
-    this.onlineUsers.set(userId, {
-      userId,
-      socketId: socket.id,
-      name: '', // You might want to fetch this from database
-      lastSeen: new Date()
-    });
+    try {
+      // Get user details from database
+      const dbUser = await db
+        .select({ 
+          id: users.id, 
+          name: users.name, 
+          role: users.role 
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
-    // Join user to their personal room
-    socket.join(`user:${userId}`);
-    
-    // Notify about user going online
-    socket.broadcast.emit('user:online', { userId, timestamp: new Date() });
-    
-    // Send online users list to the connected user
-    this.sendOnlineUsers(socket);
+
+      const userName = dbUser[0]?.role || dbUser[0]?.name || 'Unknown User';
+
+      // Add user to online users
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(socket.id);
+      
+      this.onlineUsers.set(userId, {
+        userId,
+        socketId: socket.id,
+        name: userName,
+        lastSeen: new Date()
+      });
+
+      // Join user to their personal room
+      socket.join(`user:${userId}`);
+      
+      // Notify about user going online
+      socket.broadcast.emit('user:online', { userId, timestamp: new Date() });
+      
+      // Send online users list to the connected user
+      this.sendOnlineUsers(socket);
+
+      console.log(`👥 User ${userName} (${userId}) is now online`);
+    } catch (error) {
+      console.error('Error handling user connection:', error);
+    }
   }
 
   private setupSocketEvents(socket: AuthenticatedSocket) {
@@ -112,6 +224,8 @@ class SocketManager {
       replyToMessageId?: string;
     }) => {
       try {
+        console.log(`📨 Message from ${socket.userId}:`, data.content.substring(0, 50));
+
         const messageData = {
           conversationId: data.conversationId,
           senderId: socket.userId!,
@@ -129,13 +243,10 @@ class SocketManager {
           conversationId: data.conversationId
         });
 
-        // Also emit to specific users (in case they're not in the room)
-        this.notifyConversationParticipants(data.conversationId, 'message:new', {
-          message,
-          conversationId: data.conversationId
-        });
+        console.log(`✅ Message sent successfully in conversation ${data.conversationId}`);
 
       } catch (error) {
+        console.error('Error sending message:', error);
         socket.emit('message:error', { 
           error: error instanceof Error ? error.message : 'Failed to send message' 
         });
@@ -169,6 +280,7 @@ class SocketManager {
           timestamp: new Date()
         });
       } catch (error) {
+        console.error('Error marking messages as read:', error);
         socket.emit('error', { message: 'Failed to mark messages as read' });
       }
     });
@@ -186,6 +298,7 @@ class SocketManager {
           conversationId
         });
       } catch (error) {
+        console.error('Error editing message:', error);
         socket.emit('message:error', { 
           error: error instanceof Error ? error.message : 'Failed to edit message' 
         });
@@ -204,6 +317,7 @@ class SocketManager {
           conversationId
         });
       } catch (error) {
+        console.error('Error deleting message:', error);
         socket.emit('message:error', { 
           error: error instanceof Error ? error.message : 'Failed to delete message' 
         });
@@ -211,14 +325,19 @@ class SocketManager {
     });
 
     // Handle disconnect
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.log(`📡 User ${socket.userId} disconnected: ${reason}`);
       this.handleUserDisconnection(socket);
+    });
+
+    // Handle errors
+    socket.on('error', (error) => {
+      console.error(`❌ Socket error for user ${socket.userId}:`, error);
     });
   }
 
   private handleUserDisconnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
-    console.log(`User ${userId} disconnected from socket ${socket.id}`);
     
     // Remove socket from user's socket set
     const userSocketSet = this.userSockets.get(userId);
@@ -235,6 +354,8 @@ class SocketManager {
           userId, 
           lastSeen: new Date() 
         });
+
+        console.log(`👋 User ${userId} went offline`);
       }
     }
   }
@@ -244,12 +365,6 @@ class SocketManager {
       .filter(user => user.userId !== socket.userId);
     
     socket.emit('users:online', onlineUsersList);
-  }
-
-  private async notifyConversationParticipants(conversationId: string, event: string, data: any) {
-    // You might want to get conversation participants from database
-    // and send notifications to their personal rooms
-    // This is a backup mechanism in case they're not in the conversation room
   }
 
   // Public methods for external use
