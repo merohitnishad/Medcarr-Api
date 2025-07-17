@@ -49,7 +49,8 @@ export interface ApplicationFilters {
 export class JobApplicationService {
   // Apply for a job
   static async applyForJob(data: CreateApplicationData) {
-    return await db.transaction(async (tx) => {
+    // Step 1: Create the application in a transaction
+    const result = await db.transaction(async (tx) => {
       // Check if job post exists and is active
       const jobPost = await tx.query.jobPosts.findFirst({
         where: and(
@@ -129,31 +130,52 @@ export class JobApplicationService {
         throw new Error('Failed to create application');
       }
   
-      // Create notification AFTER application is created and we have the ID
-      try {
-        await NotificationService.createFromTemplate(
-          'JOB_APPLICATION_RECEIVED',
-          jobPost.userId,
-          {
-            jobTitle: jobPost.title,
-            jobPostId: jobPost.id,
-            applicantName: healthcareUser.name,
-          },
-          {
-            jobPostId: jobPost.id,
-            jobApplicationId: application.id, // Now we have a valid application.id
-            relatedUserId: healthcareUser.id,
-            sendEmail: true,
-          }
-        );
-      } catch (notificationError) {
-        console.error('Failed to create notification:', notificationError);
-        // Don't fail the application creation if notification fails
-        // The application is still valid even if notification fails
+      // Return all the data needed for notification
+      return {
+        application,
+        jobPost,
+        healthcareUser
+      };
+    });
+  
+    // Step 2: Create notification OUTSIDE the transaction (after commit)
+    try {
+      
+      // Verify the application exists before creating notification
+      const verifyApplication = await db.query.jobApplications.findFirst({
+        where: eq(jobApplications.id, result.application.id),
+        columns: { id: true }
+      });
+  
+      if (!verifyApplication) {
+        console.error('Application not found after transaction commit!');
+        throw new Error('Application verification failed');
       }
   
-      return application;
-    });
+  
+      await NotificationService.createFromTemplate(
+        'JOB_APPLICATION_RECEIVED',
+        result.jobPost.userId,
+        {
+          jobTitle: result.jobPost.title,
+          jobPostId: result.jobPost.id,
+          applicantName: result.healthcareUser.name,
+        },
+        {
+          jobPostId: result.jobPost.id,
+          jobApplicationId: result.application.id,
+          relatedUserId: result.healthcareUser.id,
+          sendEmail: true,
+        }
+      );
+  
+    } catch (notificationError) {
+      console.error('Failed to create notification:', notificationError);
+      // Don't fail the application creation if notification fails
+      // The application is still valid even if notification fails
+    }
+  
+    return result.application;
   }
 
   // Get applications for a specific job (for job posters)
