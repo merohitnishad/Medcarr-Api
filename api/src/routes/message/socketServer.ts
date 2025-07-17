@@ -68,6 +68,7 @@ class SocketManager {
   private io: SocketIOServer;
   private onlineUsers: Map<string, OnlineUser> = new Map();
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
+  static sendToConversation: typeof SocketManager;
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -361,9 +362,26 @@ class SocketManager {
     this.io.to(`user:${userId}`).emit(event, data);
   }
 
+  // Public method for external use (like from MessageService)
   public sendToConversation(conversationId: string, event: string, data: any) {
+    console.log(`📡 Broadcasting ${event} to conversation:${conversationId}`, data);
     this.io.to(`conversation:${conversationId}`).emit(event, data);
   }
+
 }
 
-export default SocketManager;
+let socketManagerInstance: SocketManager | null = null;
+
+export function createSocketManager(httpServer: HTTPServer): SocketManager {
+  socketManagerInstance = new SocketManager(httpServer);
+  return socketManagerInstance;
+}
+
+export function getSocketManagerInstance(): SocketManager | null {
+  return socketManagerInstance;
+}
+
+// Export the instance, not the class
+
+
+export default socketManagerInstance;

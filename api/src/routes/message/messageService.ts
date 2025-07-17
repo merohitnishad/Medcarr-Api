@@ -410,6 +410,57 @@ export class MessageService {
   }
 
   // Mark messages as read
+  // static async markMessagesAsRead(conversationId: string, userId: string) {
+  //   return await db.transaction(async (tx) => {
+  //     // Verify user has access to conversation
+  //     const conversation = await tx.query.conversations.findFirst({
+  //       where: and(
+  //         eq(conversations.id, conversationId),
+  //         or(
+  //           eq(conversations.jobPosterId, userId),
+  //           eq(conversations.healthcareUserId, userId)
+  //         )
+  //       )
+  //     });
+
+  //     if (!conversation) {
+  //       throw new Error('Conversation not found or access denied');
+  //     }
+
+  //     // Update conversation's last read timestamp
+  //     const updateData = userId === conversation.jobPosterId
+  //       ? { jobPosterLastReadAt: new Date() }
+  //       : { healthcareLastReadAt: new Date() };
+
+  //     await tx
+  //       .update(conversations)
+  //       .set({
+  //         ...updateData,
+  //         updatedAt: new Date(),
+  //       })
+  //       .where(eq(conversations.id, conversationId));
+
+  //     // Mark unread messages as read
+  //     await tx
+  //       .update(messages)
+  //       .set({
+  //         status: 'read',
+  //         readAt: new Date(),
+  //         updatedAt: new Date(),
+  //       })
+  //       .where(and(
+  //         eq(messages.conversationId, conversationId),
+  //         ne(messages.senderId, userId), // Don't mark own messages
+  //         or(
+  //           eq(messages.status, 'sent'),
+  //           eq(messages.status, 'delivered')
+  //         )
+  //       ));
+
+  //     return { success: true };
+  //   });
+  // }
+
   static async markMessagesAsRead(conversationId: string, userId: string) {
     return await db.transaction(async (tx) => {
       // Verify user has access to conversation
@@ -422,16 +473,17 @@ export class MessageService {
           )
         )
       });
-
+  
       if (!conversation) {
         throw new Error('Conversation not found or access denied');
       }
-
+  
       // Update conversation's last read timestamp
+      const readTimestamp = new Date();
       const updateData = userId === conversation.jobPosterId
-        ? { jobPosterLastReadAt: new Date() }
-        : { healthcareLastReadAt: new Date() };
-
+        ? { jobPosterLastReadAt: readTimestamp }
+        : { healthcareLastReadAt: readTimestamp };
+  
       await tx
         .update(conversations)
         .set({
@@ -439,13 +491,13 @@ export class MessageService {
           updatedAt: new Date(),
         })
         .where(eq(conversations.id, conversationId));
-
+  
       // Mark unread messages as read
-      await tx
+      const updatedMessages = await tx
         .update(messages)
         .set({
           status: 'read',
-          readAt: new Date(),
+          readAt: readTimestamp,
           updatedAt: new Date(),
         })
         .where(and(
@@ -455,9 +507,38 @@ export class MessageService {
             eq(messages.status, 'sent'),
             eq(messages.status, 'delivered')
           )
-        ));
-
-      return { success: true };
+        ))
+        .returning({ id: messages.id });
+  
+      // Only send socket notification if messages were actually updated
+      if (updatedMessages.length > 0) {
+        try {
+          // Import the singleton instance getter
+          const { getSocketManagerInstance } = await import('./socketServer.js');
+          const socketManager = getSocketManagerInstance();
+          
+          if (socketManager && socketManager.sendToConversation) {
+            socketManager.sendToConversation(conversationId, 'messages:read', {
+              conversationId,
+              readBy: userId,
+              timestamp: readTimestamp,
+              updatedMessageCount: updatedMessages.length
+            });
+            
+            console.log(`📖 Sent read notification for ${updatedMessages.length} messages in conversation ${conversationId}`);
+          } else {
+            console.warn('SocketManager instance not available');
+          }
+        } catch (socketError) {
+          console.error('Error sending socket notification for read messages:', socketError);
+        }
+      }
+  
+      return { 
+        success: true, 
+        readTimestamp,
+        updatedMessageCount: updatedMessages.length 
+      };
     });
   }
 
