@@ -479,38 +479,53 @@ export class MessageService {
     });
   }
 
-  static async markMessagesAsDelivered(userId: string) {
-    return await db.transaction(async (tx) => {
-      // Find all conversations where user is a participant
-      const userConversations = await tx.query.conversations.findMany({
-        where: or(
-          eq(conversations.jobPosterId, userId),
-          eq(conversations.healthcareUserId, userId)
-        ),
-        columns: { id: true }
-      });
-  
-      const conversationIds = userConversations.map(conv => conv.id);
-  
-      if (conversationIds.length === 0) return;
-  
-      // Mark undelivered messages as delivered (except user's own messages)
-      if (conversationIds.length > 0) {
-        await tx
-          .update(messages)
-          .set({
-            status: 'delivered',
-            updatedAt: new Date(),
-          })
-          .where(and(
-            inArray(messages.conversationId, conversationIds),
-            ne(messages.senderId, userId), // Don't mark own messages
-            eq(messages.status, 'sent'),
-            eq(messages.isDeleted, false)
-          ));
-      }
+  // Mark messages as delivered
+static async markMessagesAsDelivered(userId: string) {
+  return await db.transaction(async (tx) => {
+    // Find all conversations where user is a participant
+    const userConversations = await tx.query.conversations.findMany({
+      where: or(
+        eq(conversations.jobPosterId, userId),
+        eq(conversations.healthcareUserId, userId)
+      ),
+      columns: { id: true }
     });
-  }
+
+    const conversationIds = userConversations.map(conv => conv.id);
+
+    if (conversationIds.length === 0) return { conversationIds: [] };
+
+    // Get messages that need to be marked as delivered
+    const messagesToUpdate = await tx.query.messages.findMany({
+      where: and(
+        inArray(messages.conversationId, conversationIds),
+        ne(messages.senderId, userId), // Don't mark own messages
+        eq(messages.status, 'sent'),
+        eq(messages.isDeleted, false)
+      ),
+      columns: { id: true, conversationId: true }
+    });
+
+    const messageIds = messagesToUpdate.map(msg => msg.id);
+    const affectedConversations = [...new Set(messagesToUpdate.map(msg => msg.conversationId))];
+
+    // Mark messages as delivered
+    if (messageIds.length > 0) {
+      await tx
+        .update(messages)
+        .set({
+          status: 'delivered',
+          updatedAt: new Date(),
+        })
+        .where(inArray(messages.id, messageIds));
+    }
+
+    return { 
+      conversationIds: affectedConversations,
+      messageIds: messageIds
+    };
+  });
+}
 
   // Get or create conversation for a job application
   static async getOrCreateConversation(

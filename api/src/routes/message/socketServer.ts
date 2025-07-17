@@ -165,9 +165,9 @@ class SocketManager {
         .limit(1);
   
       const userName = dbUser[0]?.name || dbUser[0]?.role || 'Unknown User';
-
-       // Mark messages as delivered when user comes online
-        await MessageService.markMessagesAsDelivered(userId);
+  
+      // Mark messages as delivered when user comes online
+      const deliveryResult = await MessageService.markMessagesAsDelivered(userId);
   
       // Add user to online users
       if (!this.userSockets.has(userId)) {
@@ -185,12 +185,20 @@ class SocketManager {
       // Join user to their personal room
       socket.join(`user:${userId}`);
       
-      // IMPORTANT: Notify ALL users about this user coming online
+      // Notify ALL users about this user coming online
       this.io.emit('user:online', { userId, timestamp: new Date() });
-
-      // Notify about delivery status updates
-      this.io.emit('messages:delivered', { userId, timestamp: new Date() });
-
+  
+      // IMPORTANT: Emit delivery updates for EACH conversation separately
+      if (deliveryResult.conversationIds && deliveryResult.conversationIds.length > 0) {
+        deliveryResult.conversationIds.forEach(conversationId => {
+          this.io.to(`conversation:${conversationId}`).emit('messages:delivered', { 
+            userId, 
+            conversationId,
+            timestamp: new Date() 
+          });
+        });
+      }
+  
       // Send complete online users list to the newly connected user
       this.sendOnlineUsers(socket);
   
