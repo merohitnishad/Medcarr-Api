@@ -8,7 +8,6 @@ import { users } from '../../db/schemas/usersSchema.js';
 import { eq } from 'drizzle-orm';
 import { MessageService } from '../message/messageService.js';
 
-
 // AWS Cognito configuration
 const COGNITO_REGION = process.env.COGNITO_REGION || 'eu-west-2';
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
@@ -104,8 +103,6 @@ class SocketManager {
           return next(new Error('Authentication token required'));
         }
 
-        console.log('Verifying Cognito token for socket connection...');
-
         // Verify Cognito JWT token
         const decoded = await verifyCognitoToken(token);
         
@@ -113,8 +110,6 @@ class SocketManager {
         const cognitoSub = decoded.sub;
         const email = decoded.email;
         const cognitoUsername = decoded['cognito:username'] || decoded.username;
-
-        console.log('Token verified for user:', { cognitoSub, email });
 
         // Get user from database
         const dbUser = await db
@@ -135,7 +130,6 @@ class SocketManager {
         socket.userRole = user.role;
         socket.cognitoSub = cognitoSub;
         
-        console.log('Socket authentication successful for user:', user.id);
         next();
       } catch (error) {
         console.error('Socket authentication failed:', error);
@@ -150,8 +144,6 @@ class SocketManager {
 
   private setupEventHandlers() {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
-      console.log(`✅ User ${socket.userId} connected with socket ${socket.id}`);
-      
       this.handleUserConnection(socket);
       this.setupSocketEvents(socket);
     });
@@ -172,8 +164,7 @@ class SocketManager {
         .where(eq(users.id, userId))
         .limit(1);
 
-
-      const userName = dbUser[0]?.role || dbUser[0]?.name || 'Unknown User';
+      const userName = dbUser[0]?.name || dbUser[0]?.role || 'Unknown User';
 
       // Add user to online users
       if (!this.userSockets.has(userId)) {
@@ -197,7 +188,6 @@ class SocketManager {
       // Send online users list to the connected user
       this.sendOnlineUsers(socket);
 
-      console.log(`👥 User ${userName} (${userId}) is now online`);
     } catch (error) {
       console.error('Error handling user connection:', error);
     }
@@ -207,13 +197,11 @@ class SocketManager {
     // Join conversation room
     socket.on('conversation:join', (conversationId: string) => {
       socket.join(`conversation:${conversationId}`);
-      console.log(`User ${socket.userId} joined conversation ${conversationId}`);
     });
 
     // Leave conversation room
     socket.on('conversation:leave', (conversationId: string) => {
       socket.leave(`conversation:${conversationId}`);
-      console.log(`User ${socket.userId} left conversation ${conversationId}`);
     });
 
     // Handle new message
@@ -224,8 +212,6 @@ class SocketManager {
       replyToMessageId?: string;
     }) => {
       try {
-        console.log(`📨 Message from ${socket.userId}:`, data.content.substring(0, 50));
-
         const messageData = {
           conversationId: data.conversationId,
           senderId: socket.userId!,
@@ -242,8 +228,6 @@ class SocketManager {
           message,
           conversationId: data.conversationId
         });
-
-        console.log(`✅ Message sent successfully in conversation ${data.conversationId}`);
 
       } catch (error) {
         console.error('Error sending message:', error);
@@ -326,7 +310,6 @@ class SocketManager {
 
     // Handle disconnect
     socket.on('disconnect', (reason) => {
-      console.log(`📡 User ${socket.userId} disconnected: ${reason}`);
       this.handleUserDisconnection(socket);
     });
 
@@ -354,8 +337,6 @@ class SocketManager {
           userId, 
           lastSeen: new Date() 
         });
-
-        console.log(`👋 User ${userId} went offline`);
       }
     }
   }
