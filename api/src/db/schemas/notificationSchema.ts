@@ -188,7 +188,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     title: 'Job Completed',
     message: 'Job "{jobTitle}" has been marked as completed',
     priority: 'normal',
-    actionUrl: '/jobs/{jobPostId}',
+    actionUrl: '/my-applications/{applicationId}',
     actionLabel: 'View Details'
   },
   REPORT_SUBMITTED: {

@@ -738,7 +738,7 @@ export class JobApplicationService {
         application.healthcareUserId,
         {
           jobTitle: application.jobPost.title,
-          jobPostId: application.jobPostId,
+          applicationId: application.id,
         },
         {
           jobPostId: application.jobPostId,

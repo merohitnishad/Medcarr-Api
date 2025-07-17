@@ -358,42 +358,6 @@ router.get('/poster/stats', requireNonHealthCare, async (req: AuthenticatedReque
 // =============================
 
 
-// Get applications for a specific job
-router.get('/job/:jobPostId/:jobPosterId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { jobPostId, jobPosterId } = req.params;
-    const userId = req.user!.id;
-    const filters: ApplicationFilters = {
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
-      status: req.query.status as string,
-    };
-
-    const result = await JobApplicationService.getJobApplications(jobPostId, jobPosterId, filters);
-
-    res.json({
-      success: true,
-      data: result.data,
-      pagination: result.pagination
-    });
-    return;
-  } catch (error) {
-    console.error('Error in get job applications route:', error);
-    if (error instanceof Error && error.message === 'Job post not found or access denied') {
-      res.status(404).json({
-        success: false,
-        error: error.message
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch applications'
-      });
-    }
-    return;
-  }
-});
-
 // Get specific application details
 router.get('/:applicationId',requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
