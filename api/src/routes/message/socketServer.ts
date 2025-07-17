@@ -163,9 +163,9 @@ class SocketManager {
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-
+  
       const userName = dbUser[0]?.name || dbUser[0]?.role || 'Unknown User';
-
+  
       // Add user to online users
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
@@ -178,16 +178,16 @@ class SocketManager {
         name: userName,
         lastSeen: new Date()
       });
-
+  
       // Join user to their personal room
       socket.join(`user:${userId}`);
       
-      // Notify about user going online
-      socket.broadcast.emit('user:online', { userId, timestamp: new Date() });
+      // IMPORTANT: Notify ALL users about this user coming online
+      this.io.emit('user:online', { userId, timestamp: new Date() });
       
-      // Send online users list to the connected user
+      // Send complete online users list to the newly connected user
       this.sendOnlineUsers(socket);
-
+  
     } catch (error) {
       console.error('Error handling user connection:', error);
     }
@@ -332,8 +332,8 @@ class SocketManager {
         this.userSockets.delete(userId);
         this.onlineUsers.delete(userId);
         
-        // Notify about user going offline
-        socket.broadcast.emit('user:offline', { 
+        // IMPORTANT: Notify ALL users about this user going offline
+        this.io.emit('user:offline', { 
           userId, 
           lastSeen: new Date() 
         });
