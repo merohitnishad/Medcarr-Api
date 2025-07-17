@@ -165,6 +165,9 @@ class SocketManager {
         .limit(1);
   
       const userName = dbUser[0]?.name || dbUser[0]?.role || 'Unknown User';
+
+       // Mark messages as delivered when user comes online
+        await MessageService.markMessagesAsDelivered(userId);
   
       // Add user to online users
       if (!this.userSockets.has(userId)) {
@@ -184,7 +187,10 @@ class SocketManager {
       
       // IMPORTANT: Notify ALL users about this user coming online
       this.io.emit('user:online', { userId, timestamp: new Date() });
-      
+
+      // Notify about delivery status updates
+      this.io.emit('messages:delivered', { userId, timestamp: new Date() });
+
       // Send complete online users list to the newly connected user
       this.sendOnlineUsers(socket);
   
@@ -254,20 +260,22 @@ class SocketManager {
 
     // Handle message read status
     socket.on('messages:read', async (data: { conversationId: string }) => {
-      try {
-        await MessageService.markMessagesAsRead(data.conversationId, socket.userId!);
-        
-        // Notify other participants that messages were read
-        socket.to(`conversation:${data.conversationId}`).emit('messages:read', {
-          conversationId: data.conversationId,
-          readBy: socket.userId,
-          timestamp: new Date()
-        });
-      } catch (error) {
-        console.error('Error marking messages as read:', error);
-        socket.emit('error', { message: 'Failed to mark messages as read' });
-      }
-    });
+        try {
+          const result = await MessageService.markMessagesAsRead(data.conversationId, socket.userId!);
+          
+          // Notify other participants that messages were read
+          socket.to(`conversation:${data.conversationId}`).emit('messages:read', {
+            conversationId: data.conversationId,
+            readBy: socket.userId,
+            messageIds: result.messageIds, // Add this
+            timestamp: new Date()
+          });
+        } catch (error) {
+          console.error('Error marking messages as read:', error);
+          socket.emit('error', { message: 'Failed to mark messages as read' });
+        }
+      });
+      
 
     // Handle message editing
     socket.on('message:edit', async (data: { messageId: string; content: string }) => {

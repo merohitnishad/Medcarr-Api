@@ -87,6 +87,15 @@ router.get('/:conversationId/messages', requireNonAdmin, async (req: Authenticat
 
     const result = await MessageService.getConversationMessages(conversationId, userId, filters);
 
+    // Auto-mark messages as read when opening conversation
+    setTimeout(async () => {
+      try {
+        await MessageService.markMessagesAsRead(conversationId, userId);
+      } catch (error) {
+        console.error('Error auto-marking messages as read:', error);
+      }
+    }, 1000);
+
     res.json({
       success: true,
       data: result.data,

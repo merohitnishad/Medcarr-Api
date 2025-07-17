@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { conversations, messages } from "../../db/schemas/messageSchema.js";
 import { jobApplications } from "../../db/schemas/jobApplicationSchema.js";
 import { users } from "../../db/schemas/usersSchema.js";
-import { eq, and, desc, count, asc, or, isNull, gt, lt, ne } from "drizzle-orm";
+import { eq, and, desc, count, asc, or, isNull, gt, lt, ne, inArray } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
 
 export interface CreateConversationData {
@@ -422,16 +422,16 @@ export class MessageService {
           )
         )
       });
-
+  
       if (!conversation) {
         throw new Error('Conversation not found or access denied');
       }
-
+  
       // Update conversation's last read timestamp
       const updateData = userId === conversation.jobPosterId
         ? { jobPosterLastReadAt: new Date() }
         : { healthcareLastReadAt: new Date() };
-
+  
       await tx
         .update(conversations)
         .set({
@@ -439,25 +439,76 @@ export class MessageService {
           updatedAt: new Date(),
         })
         .where(eq(conversations.id, conversationId));
-
-      // Mark unread messages as read
-      await tx
-        .update(messages)
-        .set({
-          status: 'read',
-          readAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(and(
+  
+      // Get messages to be marked as read
+      const messagesToRead = await tx.query.messages.findMany({
+        where: and(
           eq(messages.conversationId, conversationId),
           ne(messages.senderId, userId), // Don't mark own messages
           or(
             eq(messages.status, 'sent'),
             eq(messages.status, 'delivered')
-          )
-        ));
+          ),
+          eq(messages.isDeleted, false)
+        ),
+        columns: { id: true }
+      });
+  
+      const messageIds = messagesToRead.map(msg => msg.id);
+  
+      if (messageIds.length > 0) {
+        // Mark messages as read
+        await tx
+          .update(messages)
+          .set({
+            status: 'read',
+            readAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(messages.conversationId, conversationId),
+            ne(messages.senderId, userId),
+            or(
+              eq(messages.status, 'sent'),
+              eq(messages.status, 'delivered')
+            )
+          ));
+      }
+  
+      return { success: true, messageIds };
+    });
+  }
 
-      return { success: true };
+  static async markMessagesAsDelivered(userId: string) {
+    return await db.transaction(async (tx) => {
+      // Find all conversations where user is a participant
+      const userConversations = await tx.query.conversations.findMany({
+        where: or(
+          eq(conversations.jobPosterId, userId),
+          eq(conversations.healthcareUserId, userId)
+        ),
+        columns: { id: true }
+      });
+  
+      const conversationIds = userConversations.map(conv => conv.id);
+  
+      if (conversationIds.length === 0) return;
+  
+      // Mark undelivered messages as delivered (except user's own messages)
+      if (conversationIds.length > 0) {
+        await tx
+          .update(messages)
+          .set({
+            status: 'delivered',
+            updatedAt: new Date(),
+          })
+          .where(and(
+            inArray(messages.conversationId, conversationIds),
+            ne(messages.senderId, userId), // Don't mark own messages
+            eq(messages.status, 'sent'),
+            eq(messages.isDeleted, false)
+          ));
+      }
     });
   }
 
