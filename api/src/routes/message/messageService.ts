@@ -427,6 +427,22 @@ export class MessageService {
         throw new Error('Conversation not found or access denied');
       }
   
+      // Get messages to be marked as read BEFORE updating
+      const messagesToRead = await tx.query.messages.findMany({
+        where: and(
+          eq(messages.conversationId, conversationId),
+          ne(messages.senderId, userId), // Don't mark own messages
+          or(
+            eq(messages.status, 'sent'),
+            eq(messages.status, 'delivered')
+          ),
+          eq(messages.isDeleted, false)
+        ),
+        columns: { id: true, senderId: true }
+      });
+  
+      const messageIds = messagesToRead.map(msg => msg.id);
+  
       // Update conversation's last read timestamp
       const updateData = userId === conversation.jobPosterId
         ? { jobPosterLastReadAt: new Date() }
@@ -440,22 +456,6 @@ export class MessageService {
         })
         .where(eq(conversations.id, conversationId));
   
-      // Get messages to be marked as read
-      const messagesToRead = await tx.query.messages.findMany({
-        where: and(
-          eq(messages.conversationId, conversationId),
-          ne(messages.senderId, userId), // Don't mark own messages
-          or(
-            eq(messages.status, 'sent'),
-            eq(messages.status, 'delivered')
-          ),
-          eq(messages.isDeleted, false)
-        ),
-        columns: { id: true }
-      });
-  
-      const messageIds = messagesToRead.map(msg => msg.id);
-  
       if (messageIds.length > 0) {
         // Mark messages as read
         await tx
@@ -465,17 +465,15 @@ export class MessageService {
             readAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(and(
-            eq(messages.conversationId, conversationId),
-            ne(messages.senderId, userId),
-            or(
-              eq(messages.status, 'sent'),
-              eq(messages.status, 'delivered')
-            )
-          ));
+          .where(inArray(messages.id, messageIds));
       }
   
-      return { success: true, messageIds };
+      // IMPORTANT: Return the messageIds for socket notification
+      return { 
+        success: true, 
+        messageIds,
+        readTimestamp: new Date()
+      };
     });
   }
 
