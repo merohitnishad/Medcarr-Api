@@ -29,13 +29,6 @@
       "when": 1752668922519,
       "tag": "0003_stormy_skullbuster",
       "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1752760391406,
-      "tag": "0004_young_leopardon",
-      "breakpoints": true
     }
   ]
 }

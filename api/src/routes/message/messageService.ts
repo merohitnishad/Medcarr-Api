@@ -172,15 +172,27 @@ export class MessageService {
         : conversation.jobPosterId;
 
       // Create notification for recipient
-      await NotificationService.handleMessageNotification(
-        data.conversationId,
-        data.senderId,
+      await NotificationService.createFromTemplate(
+        'NEW_MESSAGE_RECEIVED',
         recipientId,
-        sender?.name || 'Someone',
-        conversation.jobApplication.jobPost.title,
-        conversation.jobApplication.jobPost.id,
-        conversation.jobApplicationId
-      )
+        {
+          senderName: sender?.name || 'Someone',
+          jobTitle: conversation.jobApplication.jobPost.title,
+          messagePreview: data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content,
+          conversationId: data.conversationId, // ADD THIS LINE
+        },
+        {
+          jobPostId: conversation.jobApplication.jobPost.id,
+          jobApplicationId: conversation.jobApplicationId,
+          relatedUserId: data.senderId,
+          sendEmail: false, // Usually don't send email for every message
+          metadata: {
+            conversationId: data.conversationId,
+            messageId: message.id,
+            messageType: data.messageType
+          }
+        }
+      );
 
       return message;
     });
@@ -433,32 +445,29 @@ export class MessageService {
   
       // Update conversation's last read timestamp
       const updateData = userId === conversation.jobPosterId
-      ? { jobPosterLastReadAt: new Date() }
-      : { healthcareLastReadAt: new Date() };
-
-    await tx
-      .update(conversations)
-      .set({
-        ...updateData,
-        updatedAt: new Date(),
-      })
-      .where(eq(conversations.id, conversationId));
-
-    if (messageIds.length > 0) {
-      // Mark messages as read
+        ? { jobPosterLastReadAt: new Date() }
+        : { healthcareLastReadAt: new Date() };
+  
       await tx
-        .update(messages)
+        .update(conversations)
         .set({
-          status: 'read',
-          readAt: new Date(),
+          ...updateData,
           updatedAt: new Date(),
         })
-        .where(inArray(messages.id, messageIds));
-    }
-
-    // ADD THIS: Mark conversation notification as read
-    await NotificationService.markConversationNotificationAsRead(conversationId, userId);
-
+        .where(eq(conversations.id, conversationId));
+  
+      if (messageIds.length > 0) {
+        // Mark messages as read
+        await tx
+          .update(messages)
+          .set({
+            status: 'read',
+            readAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(inArray(messages.id, messageIds));
+      }
+  
       // IMPORTANT: Return the messageIds for socket notification
       return { 
         success: true, 
