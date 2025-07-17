@@ -12,18 +12,32 @@ import messageRoutes from './routes/message/index.js';
 import reviewRoutes from './routes/review/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import SocketManager from './routes/message/socketServer.js';
+import { createServer } from 'http';
 
 // Load environment variables
 dotenv.config();
 
 const port = process.env.PORT || 4000;
 const app = express();
+const httpServer = createServer(app);
+
+
+// Initialize Socket.io
+const socketManager = new SocketManager(httpServer);
+
+// Make socket manager available globally
+declare global {
+  var socketManager: SocketManager;
+}
+global.socketManager = socketManager;
 
 // Enable CORS
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
+
 
 app.use(urlencoded({ extended: true, limit: '2mb' }));
 app.use(json({limit: '2mb'}));
@@ -49,4 +63,5 @@ app.get('/health', (req, res) => {
 // Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  console.log(`Socket.io server initialized`);
 });
