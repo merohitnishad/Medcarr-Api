@@ -361,7 +361,7 @@ router.get('/poster/stats', requireNonHealthCare, async (req: AuthenticatedReque
 // Get applications for a specific job
 router.get('/job/:jobPostId/:jobPosterId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { jobPostId, jobPoserId } = req.params;
+    const { jobPostId, jobPosterId } = req.params;
     const userId = req.user!.id;
     const filters: ApplicationFilters = {
       page: req.query.page ? parseInt(req.query.page as string) : 1,
@@ -369,7 +369,7 @@ router.get('/job/:jobPostId/:jobPosterId', requireNonAdmin, async (req: Authenti
       status: req.query.status as string,
     };
 
-    const result = await JobApplicationService.getJobApplications(jobPostId, jobPoserId, filters);
+    const result = await JobApplicationService.getJobApplications(jobPostId, jobPosterId, filters);
 
     res.json({
       success: true,
