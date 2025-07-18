@@ -215,12 +215,48 @@ export class MessageService {
           eq(conversations.jobPosterId, userId),
           eq(conversations.healthcareUserId, userId)
         )
-      )
+      ),
+      with: {
+        jobPoster: {
+          columns: {
+            id: true,
+            name: true,
+            role: true,
+          },
+          with: {
+            healthcareProfile: {
+              columns: {
+                image: true,
+              }
+            }
+          }
+        },
+        healthcareUser: {
+          columns: {
+            id: true,
+            name: true,
+            role: true,
+          },
+          with: {
+            healthcareProfile: {
+              columns: {
+                image: true,
+              }
+            }
+          }
+        }
+      }
     });
+
 
     if (!conversation) {
       throw new Error('Conversation not found or access denied');
     }
+
+    const otherParticipant = conversation.jobPosterId === userId 
+    ? conversation.healthcareUser 
+    : conversation.jobPoster;
+
 
     const conditions = [
       eq(messages.conversationId, conversationId),
@@ -284,7 +320,13 @@ export class MessageService {
     });
 
     return {
-      data: results.reverse(), // Reverse to show oldest first in chat
+      data: results.reverse(),
+      otherParticipant: {
+        id: otherParticipant.id,
+        name: otherParticipant.name,
+        role: otherParticipant.role,
+        imageUrl: otherParticipant.healthcareProfile?.image || null,
+      }, // Reverse to show oldest first in chat
       pagination: {
         page,
         limit,
@@ -300,7 +342,7 @@ export class MessageService {
   static async getUserConversations(userId: string, filters: ConversationFilters = {}) {
     const { page = 1, limit = 20, archived = false, blocked = false } = filters;
     const offset = (page - 1) * limit;
-
+  
     const conditions = [
       or(
         eq(conversations.jobPosterId, userId),
@@ -310,12 +352,12 @@ export class MessageService {
       eq(conversations.isArchived, archived),
       eq(conversations.isBlocked, blocked),
     ];
-
+  
     const [totalCount] = await db
       .select({ count: count() })
       .from(conversations)
       .where(and(...conditions));
-
+  
     const results = await db.query.conversations.findMany({
       where: and(...conditions),
       with: {
@@ -341,6 +383,14 @@ export class MessageService {
           columns: {
             id: true,
             name: true,
+          },
+          // Add healthcare profile information
+          with: {
+            healthcareProfile: {
+              columns: {
+                image: true,
+              }
+            }
           }
         },
         lastMessage: {
@@ -361,41 +411,55 @@ export class MessageService {
       limit,
       offset
     });
-
+  
     // Add unread count for each conversation
     const conversationsWithUnreadCount = await Promise.all(
       results.map(async (conversation) => {
         const lastReadAt = userId === conversation.jobPosterId 
           ? conversation.jobPosterLastReadAt 
           : conversation.healthcareLastReadAt;
-
+  
         const unreadConditions = [
           eq(messages.conversationId, conversation.id),
           eq(messages.isDeleted, false),
         ];
-
+  
         if (lastReadAt) {
           unreadConditions.push(gt(messages.createdAt, lastReadAt));
         }
-
+  
         // Don't count own messages as unread
         unreadConditions.push(ne(messages.senderId, userId));
-
+  
         const [unreadCount] = await db
           .select({ count: count() })
           .from(messages)
           .where(and(...unreadConditions));
-
+  
+        // Create otherParticipant with role and healthcareProfile
+        const isHealthcareUser = userId === conversation.jobPosterId;
+        const otherParticipant = isHealthcareUser 
+          ? {
+              id: conversation.healthcareUser.id,
+              name: conversation.healthcareUser.name,
+              role: 'healthcare' as const,
+              healthcareProfileImage: conversation.healthcareUser.healthcareProfile?.image || null
+            }
+          : {
+              id: conversation.jobPoster.id,
+              name: conversation.jobPoster.name,
+              role: 'individual' as const,
+              healthcareProfileImage: null
+            };
+  
         return {
           ...conversation,
           unreadCount: unreadCount.count,
-          otherParticipant: userId === conversation.jobPosterId 
-            ? conversation.healthcareUser 
-            : conversation.jobPoster
+          otherParticipant
         };
       })
     );
-
+    
     return {
       data: conversationsWithUnreadCount,
       pagination: {
