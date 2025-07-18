@@ -148,7 +148,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     title: 'New Job Application',
     message: 'You have received a new application for your job post "{jobTitle}"',
     priority: 'normal',
-    actionUrl: '/jobs/{jobPostId}/applications',
+    actionUrl: '/posted-jobs/view-applicants/{jobPostId}',
     actionLabel: 'View Application'
   },
   APPLICATION_ACCEPTED: {
