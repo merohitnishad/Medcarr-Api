@@ -1,15 +1,15 @@
 // server/socketServer.ts
-import { Server as HTTPServer } from 'http';
-import { Server as SocketIOServer, Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
-import jwksClient from 'jwks-rsa';
-import { db } from '../../db/index.js';
-import { users } from '../../db/schemas/usersSchema.js';
-import { eq } from 'drizzle-orm';
-import { MessageService } from '../message/messageService.js';
+import { Server as HTTPServer } from "http";
+import { Server as SocketIOServer, Socket } from "socket.io";
+import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
+import { db } from "../../db/index.js";
+import { users } from "../../db/schemas/usersSchema.js";
+import { eq } from "drizzle-orm";
+import { MessageService } from "../message/messageService.js";
 
 // AWS Cognito configuration
-const COGNITO_REGION = process.env.COGNITO_REGION || 'eu-west-2';
+const COGNITO_REGION = process.env.COGNITO_REGION || "eu-west-2";
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const COGNITO_JWKS_URI = `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`;
 
@@ -37,17 +37,22 @@ const verifyCognitoToken = (token: string): Promise<any> => {
       });
     };
 
-    jwt.verify(token, getKey, {
-      audience: process.env.COGNITO_CLIENT_ID,
-      issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`,
-      algorithms: ['RS256']
-    }, (err, decoded) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(decoded);
+    jwt.verify(
+      token,
+      getKey,
+      {
+        audience: process.env.COGNITO_CLIENT_ID,
+        issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`,
+        algorithms: ["RS256"],
+      },
+      (err, decoded) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(decoded);
+        }
       }
-    });
+    );
   });
 };
 
@@ -68,15 +73,20 @@ class SocketManager {
   private io: SocketIOServer;
   private onlineUsers: Map<string, OnlineUser> = new Map();
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
+  private userSocketMap: Map<string, string> = new Map(); // userId -> primary socketId
+
+  private getSocketIdByUserId(userId: string): string | undefined {
+    return this.userSocketMap.get(userId);
+  }
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: process.env.FRONTEND_URL || "http://localhost:3000",
         methods: ["GET", "POST"],
-        credentials: true
+        credentials: true,
       },
-      transports: ['websocket', 'polling']
+      transports: ["websocket", "polling"],
     });
 
     this.setupMiddleware();
@@ -89,27 +99,27 @@ class SocketManager {
       try {
         // Get token from handshake
         let token = socket.handshake.auth.token;
-        
+
         // Also check headers as fallback
         if (!token) {
           const authHeader = socket.handshake.headers.authorization;
-          if (authHeader && authHeader.startsWith('Bearer ')) {
-            token = authHeader.split(' ')[1];
+          if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.split(" ")[1];
           }
         }
-        
+
         if (!token) {
-          console.error('Socket auth failed: No token provided');
-          return next(new Error('Authentication token required'));
+          console.error("Socket auth failed: No token provided");
+          return next(new Error("Authentication token required"));
         }
 
         // Verify Cognito JWT token
         const decoded = await verifyCognitoToken(token);
-        
+
         // Extract user info from Cognito token
         const cognitoSub = decoded.sub;
         const email = decoded.email;
-        const cognitoUsername = decoded['cognito:username'] || decoded.username;
+        const cognitoUsername = decoded["cognito:username"] || decoded.username;
 
         // Get user from database
         const dbUser = await db
@@ -119,8 +129,11 @@ class SocketManager {
           .limit(1);
 
         if (dbUser.length === 0) {
-          console.error('Socket auth failed: User not found in database for cognitoId:', cognitoSub);
-          return next(new Error('User not found in database'));
+          console.error(
+            "Socket auth failed: User not found in database for cognitoId:",
+            cognitoSub
+          );
+          return next(new Error("User not found in database"));
         }
 
         const user = dbUser[0];
@@ -129,21 +142,21 @@ class SocketManager {
         socket.userId = user.id;
         socket.userRole = user.role;
         socket.cognitoSub = cognitoSub;
-        
+
         next();
       } catch (error) {
-        console.error('Socket authentication failed:', error);
+        console.error("Socket authentication failed:", error);
         if (error instanceof Error) {
           next(new Error(`Authentication failed: ${error.message}`));
         } else {
-          next(new Error('Authentication failed'));
+          next(new Error("Authentication failed"));
         }
       }
     });
   }
 
   private setupEventHandlers() {
-    this.io.on('connection', (socket: AuthenticatedSocket) => {
+    this.io.on("connection", (socket: AuthenticatedSocket) => {
       this.handleUserConnection(socket);
       this.setupSocketEvents(socket);
     });
@@ -151,217 +164,285 @@ class SocketManager {
 
   private async handleUserConnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
-    
+
     try {
       // Get user details from database
       const dbUser = await db
-        .select({ 
-          id: users.id, 
-          name: users.name, 
-          role: users.role 
+        .select({
+          id: users.id,
+          name: users.name,
+          role: users.role,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-  
-      const userName = dbUser[0]?.name || dbUser[0]?.role || 'Unknown User';
-  
+
+      const userName = dbUser[0]?.name || dbUser[0]?.role || "Unknown User";
+
       // Mark messages as delivered when user comes online
-      const deliveryResult = await MessageService.markMessagesAsDelivered(userId);
-  
+      const deliveryResult = await MessageService.markMessagesAsDelivered(
+        userId
+      );
+
       // Add user to online users
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
       }
       this.userSockets.get(userId)!.add(socket.id);
-      
+
+      this.userSocketMap.set(userId, socket.id);
+
       this.onlineUsers.set(userId, {
         userId,
         socketId: socket.id,
         name: userName,
-        lastSeen: new Date()
+        lastSeen: new Date(),
       });
-  
+
       // Join user to their personal room
       socket.join(`user:${userId}`);
-      
+
       // Notify ALL users about this user coming online
-      this.io.emit('user:online', { userId, timestamp: new Date() });
-  
+      this.io.emit("user:online", { userId, timestamp: new Date() });
+
       // IMPORTANT: Emit delivery updates for EACH conversation separately
-      if (deliveryResult.conversationIds && deliveryResult.conversationIds.length > 0) {
-        deliveryResult.conversationIds.forEach(conversationId => {
-          this.io.to(`conversation:${conversationId}`).emit('messages:delivered', { 
-            userId, 
-            conversationId,
-            timestamp: new Date() 
-          });
+      if (
+        deliveryResult.conversationIds &&
+        deliveryResult.conversationIds.length > 0
+      ) {
+        deliveryResult.conversationIds.forEach((conversationId) => {
+          this.io
+            .to(`conversation:${conversationId}`)
+            .emit("messages:delivered", {
+              userId,
+              conversationId,
+              timestamp: new Date(),
+            });
         });
       }
-  
+
       // Send complete online users list to the newly connected user
       this.sendOnlineUsers(socket);
-  
     } catch (error) {
-      console.error('Error handling user connection:', error);
+      console.error("Error handling user connection:", error);
     }
   }
 
   private setupSocketEvents(socket: AuthenticatedSocket) {
     // Join conversation room
-    socket.on('conversation:join', (conversationId: string) => {
-      socket.join(`conversation:${conversationId}`);
+    socket.on("conversation:join", async (conversationId: string) => {
+      try {
+        socket.join(`conversation:${conversationId}`);
+
+        // Auto-mark messages as read when user joins the conversation
+        const readResult = await MessageService.markMessagesAsRead(
+          conversationId,
+          socket.userId!
+        );
+
+        if (readResult.messageIds.length > 0) {
+          // Notify other participants that messages were read
+          socket.to(`conversation:${conversationId}`).emit("messages:read", {
+            conversationId,
+            readBy: socket.userId,
+            timestamp: readResult.readTimestamp,
+            messageIds: readResult.messageIds,
+          });
+        }
+      } catch (error) {
+        console.error("Error handling conversation join:", error);
+      }
     });
 
     // Leave conversation room
-    socket.on('conversation:leave', (conversationId: string) => {
+    socket.on("conversation:leave", (conversationId: string) => {
       socket.leave(`conversation:${conversationId}`);
     });
 
     // Handle new message
-    socket.on('message:send', async (data: {
-      conversationId: string;
-      content: string;
-      messageType?: 'text' | 'image' | 'file';
-      replyToMessageId?: string;
-    }) => {
+    socket.on("message:send", async (data) => {
       try {
-        const messageData = {
-          conversationId: data.conversationId,
-          senderId: socket.userId!,
-          content: data.content,
-          messageType: data.messageType || 'text',
-          replyToMessageId: data.replyToMessageId,
-        };
+        // Send the message
+        const message = await MessageService.sendMessage({
+          ...data,
+          senderId: socket.userId,
+        });
 
-        // Save message to database
-        const message = await MessageService.sendMessage(messageData);
-        
-        // Emit to all users in the conversation room
-        this.io.to(`conversation:${data.conversationId}`).emit('message:new', {
+        // Emit new message to conversation participants
+        this.io.to(`conversation:${data.conversationId}`).emit("message:new", {
           message,
-          conversationId: data.conversationId
+          conversationId: data.conversationId,
         });
 
+        // GET RECIPIENT USER ID
+        const conversation = await MessageService.getConversationById(
+          data.conversationId
+        );
+        const recipientId =
+          socket.userId === conversation.jobPosterId
+            ? conversation.healthcareUserId
+            : conversation.jobPosterId;
+
+        // CHECK IF RECIPIENT IS ONLINE
+        const recipientSocketId = this.getSocketIdByUserId(recipientId);
+
+        if (recipientSocketId) {
+          // FETCH AND SEND UPDATED CONVERSATION LIST TO RECIPIENT
+          const updatedConversations =
+            await MessageService.getUserConversations(recipientId, {
+              limit: 20,
+            });
+
+          this.io.to(recipientSocketId).emit("conversations:updated", {
+            conversations: updatedConversations.data,
+          });
+        }
       } catch (error) {
-        console.error('Error sending message:', error);
-        socket.emit('message:error', { 
-          error: error instanceof Error ? error.message : 'Failed to send message' 
-        });
+        console.error("Error sending message:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        socket.emit("error", { message: errorMessage });
       }
     });
 
     // Handle typing indicators
-    socket.on('typing:start', (data: { conversationId: string }) => {
-      socket.to(`conversation:${data.conversationId}`).emit('typing:start', {
+    socket.on("typing:start", (data: { conversationId: string }) => {
+      socket.to(`conversation:${data.conversationId}`).emit("typing:start", {
         userId: socket.userId,
-        conversationId: data.conversationId
+        conversationId: data.conversationId,
       });
     });
 
-    socket.on('typing:stop', (data: { conversationId: string }) => {
-      socket.to(`conversation:${data.conversationId}`).emit('typing:stop', {
+    socket.on("typing:stop", (data: { conversationId: string }) => {
+      socket.to(`conversation:${data.conversationId}`).emit("typing:stop", {
         userId: socket.userId,
-        conversationId: data.conversationId
+        conversationId: data.conversationId,
       });
     });
 
     // Handle message read status
-    socket.on('messages:read', async (data: { conversationId: string }) => {
-        try {
-          const result = await MessageService.markMessagesAsRead(data.conversationId, socket.userId!);
-          
-          // Notify other participants that messages were read
-          socket.to(`conversation:${data.conversationId}`).emit('messages:read', {
-            conversationId: data.conversationId,
-            readBy: socket.userId,
-            messageIds: result.messageIds, // Add this
-            timestamp: new Date()
-          });
-        } catch (error) {
-          console.error('Error marking messages as read:', error);
-          socket.emit('error', { message: 'Failed to mark messages as read' });
-        }
-      });
-      
-
-    // Handle message editing
-    socket.on('message:edit', async (data: { messageId: string; content: string }) => {
+    socket.on("messages:read", async (data: { conversationId: string }) => {
       try {
-        const updatedMessage = await MessageService.editMessage(data.messageId, socket.userId!, data.content);
-        
-        // Get conversation ID from message
-        const conversationId = updatedMessage.conversationId;
-        
-        this.io.to(`conversation:${conversationId}`).emit('message:edited', {
-          message: updatedMessage,
-          conversationId
+        const result = await MessageService.markMessagesAsRead(
+          data.conversationId,
+          socket.userId!
+        );
+
+        // Notify other participants that messages were read
+        socket.to(`conversation:${data.conversationId}`).emit("messages:read", {
+          conversationId: data.conversationId,
+          readBy: socket.userId,
+          messageIds: result.messageIds, // Add this
+          timestamp: new Date(),
         });
       } catch (error) {
-        console.error('Error editing message:', error);
-        socket.emit('message:error', { 
-          error: error instanceof Error ? error.message : 'Failed to edit message' 
-        });
+        console.error("Error marking messages as read:", error);
+        socket.emit("error", { message: "Failed to mark messages as read" });
       }
     });
 
+    // Handle message editing
+    socket.on(
+      "message:edit",
+      async (data: { messageId: string; content: string }) => {
+        try {
+          const updatedMessage = await MessageService.editMessage(
+            data.messageId,
+            socket.userId!,
+            data.content
+          );
+
+          // Get conversation ID from message
+          const conversationId = updatedMessage.conversationId;
+
+          this.io.to(`conversation:${conversationId}`).emit("message:edited", {
+            message: updatedMessage,
+            conversationId,
+          });
+        } catch (error) {
+          console.error("Error editing message:", error);
+          socket.emit("message:error", {
+            error:
+              error instanceof Error ? error.message : "Failed to edit message",
+          });
+        }
+      }
+    );
+
     // Handle message deletion
-    socket.on('message:delete', async (data: { messageId: string }) => {
+    socket.on("message:delete", async (data: { messageId: string }) => {
       try {
-        const deletedMessage = await MessageService.deleteMessage(data.messageId, socket.userId!);
-        
+        const deletedMessage = await MessageService.deleteMessage(
+          data.messageId,
+          socket.userId!
+        );
+
         const conversationId = deletedMessage.conversationId;
-        
-        this.io.to(`conversation:${conversationId}`).emit('message:deleted', {
+
+        this.io.to(`conversation:${conversationId}`).emit("message:deleted", {
           messageId: data.messageId,
-          conversationId
+          conversationId,
         });
       } catch (error) {
-        console.error('Error deleting message:', error);
-        socket.emit('message:error', { 
-          error: error instanceof Error ? error.message : 'Failed to delete message' 
+        console.error("Error deleting message:", error);
+        socket.emit("message:error", {
+          error:
+            error instanceof Error ? error.message : "Failed to delete message",
         });
       }
     });
 
     // Handle disconnect
-    socket.on('disconnect', (reason) => {
+    socket.on("disconnect", (reason) => {
       this.handleUserDisconnection(socket);
     });
 
     // Handle errors
-    socket.on('error', (error) => {
+    socket.on("error", (error) => {
       console.error(`❌ Socket error for user ${socket.userId}:`, error);
     });
   }
 
   private handleUserDisconnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
-    
+
     // Remove socket from user's socket set
     const userSocketSet = this.userSockets.get(userId);
     if (userSocketSet) {
       userSocketSet.delete(socket.id);
-      
+
+      // If this was the primary socket, update it
+      if (this.userSocketMap.get(userId) === socket.id) {
+        if (userSocketSet.size > 0) {
+          // Set another socket as primary
+          const newPrimarySocket = Array.from(userSocketSet)[0];
+          this.userSocketMap.set(userId, newPrimarySocket);
+        } else {
+          // No more sockets, remove from map
+          this.userSocketMap.delete(userId);
+        }
+      }
+
       // If no more sockets for this user, mark as offline
       if (userSocketSet.size === 0) {
         this.userSockets.delete(userId);
         this.onlineUsers.delete(userId);
-        
-        // IMPORTANT: Notify ALL users about this user going offline
-        this.io.emit('user:offline', { 
-          userId, 
-          lastSeen: new Date() 
+
+        // Notify ALL users about this user going offline
+        this.io.emit("user:offline", {
+          userId,
+          lastSeen: new Date(),
         });
       }
     }
   }
 
   private sendOnlineUsers(socket: AuthenticatedSocket) {
-    const onlineUsersList = Array.from(this.onlineUsers.values())
-      .filter(user => user.userId !== socket.userId);
-    
-    socket.emit('users:online', onlineUsersList);
+    const onlineUsersList = Array.from(this.onlineUsers.values()).filter(
+      (user) => user.userId !== socket.userId
+    );
+
+    socket.emit("users:online", onlineUsersList);
   }
 
   // Public methods for external use

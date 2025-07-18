@@ -136,20 +136,20 @@ export class MessageService {
 
       // Create message
       const [message] = await tx
-        .insert(messages)
-        .values({
-          conversationId: data.conversationId,
-          senderId: data.senderId,
-          content: data.content,
-          messageType: data.messageType || 'text',
-          fileName: data.fileName,
-          fileSize: data.fileSize,
-          mimeType: data.mimeType,
-          replyToMessageId: data.replyToMessageId,
-          status: 'sent',
-        })
-        .returning();
-
+      .insert(messages)
+      .values({
+        conversationId: data.conversationId,
+        senderId: data.senderId,
+        content: data.content,
+        messageType: data.messageType || 'text',
+        fileName: data.fileName,
+        fileSize: data.fileSize,
+        mimeType: data.mimeType,
+        replyToMessageId: data.replyToMessageId,
+        status: 'sent',
+      })
+      .returning();
+      
       // Update conversation with last message info
       await tx
         .update(conversations)
@@ -523,6 +523,24 @@ export class MessageService {
         messageIds: messageIds
       };
     });
+  }
+
+  // Add this to your MessageService.ts
+  static async getConversationById(conversationId: string) {
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(conversations.id, conversationId),
+      columns: {
+        id: true,
+        jobPosterId: true,
+        healthcareUserId: true
+      }
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    return conversation;
   }
 
   // Get or create conversation for a job application
