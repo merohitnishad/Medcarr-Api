@@ -77,8 +77,8 @@ export const jobPosts = pgTable(
     paymentCost: integer("payment_cost").notNull(), // in cents to avoid decimal issues
     isActive: boolean("is_active").default(true).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     userIdIdx: index("job_posts_user_id_idx").on(table.userId),
@@ -100,7 +100,7 @@ export const jobPostCareNeeds = pgTable(
     careNeedId: uuid("care_need_id")
       .notNull()
       .references(() => careNeeds.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     jobPostIdIdx: index("job_post_care_needs_job_post_id_idx").on(
@@ -127,7 +127,7 @@ export const jobPostLanguages = pgTable(
     languageId: uuid("language_id")
       .notNull()
       .references(() => languages.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     jobPostIdIdx: index("job_post_languages_job_post_id_idx").on(
@@ -154,7 +154,7 @@ export const jobPostPreferences = pgTable(
     preferenceId: uuid("preference_id")
       .notNull()
       .references(() => preferences.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     jobPostIdIdx: index("job_post_preferences_job_post_id_idx").on(

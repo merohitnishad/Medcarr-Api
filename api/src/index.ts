@@ -1,5 +1,4 @@
 import express, { json, urlencoded, Request } from 'express';
-// import productsRoutes from './routes/products/index.js';
 import authRoutes from './routes/auth/index.js';
 import userIndvidualRoutes from './routes/user/individual/index.js';
 import userOrganizationRoutes from './routes/user/organization/index.js';
@@ -43,7 +42,6 @@ app.use(urlencoded({ extended: true, limit: '2mb' }));
 app.use(json({limit: '2mb'}));
 
 // Routes
-// app.use('/products', productsRoutes);
 app.use('/auth', authRoutes);
 app.use('/user/individual', userIndvidualRoutes);
 app.use('/user/organization', userOrganizationRoutes);

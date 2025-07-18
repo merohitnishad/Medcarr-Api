@@ -29,6 +29,20 @@
       "when": 1752668922519,
       "tag": "0003_stormy_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1752825424449,
+      "tag": "0004_slippery_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1752826329745,
+      "tag": "0005_youthful_hiroim",
+      "breakpoints": true
     }
   ]
 }

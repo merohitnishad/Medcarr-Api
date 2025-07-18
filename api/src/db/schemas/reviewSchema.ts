@@ -56,15 +56,15 @@ import {
       
       // Response from healthcare provider
       healthcareResponse: text("healthcare_response"),
-      responseDate: timestamp("response_date"),
+      responseDate: timestamp("response_date", { withTimezone: true }),
       
       // Status and metadata
       status: reviewStatusEnum("status").default("submitted").notNull(),
       isVerified: boolean("is_verified").default(false).notNull(), // Admin verification
       isPublic: boolean("is_public").default(true).notNull(), // Can be made private
       isDeleted: boolean("is_deleted").default(false).notNull(),
-      createdAt: timestamp("created_at").defaultNow().notNull(),
-      updatedAt: timestamp("updated_at").defaultNow().notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+      updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
       jobPostIdIdx: index("reviews_job_post_id_idx").on(table.jobPostId),
@@ -92,7 +92,7 @@ import {
         .notNull()
         .references(() => users.id, { onDelete: "cascade" }),
       isHelpful: boolean("is_helpful").notNull(), // true for helpful, false for not helpful
-      createdAt: timestamp("created_at").defaultNow().notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
       reviewIdIdx: index("review_helpful_votes_review_id_idx").on(table.reviewId),

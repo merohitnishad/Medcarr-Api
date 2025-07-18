@@ -48,36 +48,36 @@ export const jobApplications = pgTable(
     applicationMessage: text("application_message"), // Optional message from healthcare worker
     
     // Acceptance/Rejection data
-    respondedAt: timestamp("responded_at"), // When job poster responded
+    respondedAt: timestamp("responded_at", { withTimezone: true }), // When job poster responded
     responseMessage: text("response_message"), // Message from job poster
     
     // Cancellation data
-    cancelledAt: timestamp("cancelled_at"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancellationReason: cancellationReasonEnum("cancellation_reason"),
     cancellationMessage: text("cancellation_message"),
     cancelledBy: uuid("cancelled_by").references(() => users.id), // Who cancelled (healthcare or job poster)
     
     // Check-in/Check-out data
-    checkedInAt: timestamp("checked_in_at"),
-    checkedOutAt: timestamp("checked_out_at"),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+    checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
     checkinLocation: text("checkin_location"), // GPS coordinates or address
     checkoutLocation: text("checkout_location"),
     
     // Completion data
-    completedAt: timestamp("completed_at"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     completedBy: uuid("completed_by").references(() => users.id), // Job poster marks as complete
     completionNotes: text("completion_notes"),
     
     // Report data
-    reportedAt: timestamp("reported_at"),
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
     reportReason: text("report_reason"),
     reportMessage: text("report_message"),
     reportedBy: uuid("reported_by").references(() => users.id),
     
     isActive: boolean("is_active").default(true).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     jobPostIdIdx: index("job_applications_job_post_id_idx").on(table.jobPostId),

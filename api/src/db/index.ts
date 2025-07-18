@@ -9,6 +9,7 @@ const rootEnv = path.resolve(__dirname, "../../.env");
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL! as string,
+  options: '-c timezone=UTC'
 });
 
 pool.connect((err, client, release) => {

@@ -44,22 +44,22 @@ import {
         .references(() => users.id, { onDelete: "cascade" }),
       
       // Metadata
-      lastMessageAt: timestamp("last_message_at"),
+      lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
       lastMessageId: uuid("last_message_id"),
       
       // Read status tracking
-      jobPosterLastReadAt: timestamp("job_poster_last_read_at"),
-      healthcareLastReadAt: timestamp("healthcare_last_read_at"),
+      jobPosterLastReadAt: timestamp("job_poster_last_read_at", { withTimezone: true }),
+      healthcareLastReadAt: timestamp("healthcare_last_read_at", { withTimezone: true }),
       
       // Conversation settings
       isActive: boolean("is_active").default(true).notNull(),
       isArchived: boolean("is_archived").default(false).notNull(),
       isBlocked: boolean("is_blocked").default(false).notNull(),
       blockedBy: uuid("blocked_by").references(() => users.id),
-      blockedAt: timestamp("blocked_at"),
+      blockedAt: timestamp("blocked_at", { withTimezone: true }),
       
-      createdAt: timestamp("created_at").defaultNow().notNull(),
-      updatedAt: timestamp("updated_at").defaultNow().notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+      updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
       jobApplicationIdIdx: index("conversations_job_application_id_idx").on(table.jobApplicationId),
@@ -91,19 +91,19 @@ import {
       
       // Message metadata
       status: messageStatusEnum("status").default("sent").notNull(),
-      readAt: timestamp("read_at"),
-      editedAt: timestamp("edited_at"),
+      readAt: timestamp("read_at", { withTimezone: true }),
+      editedAt: timestamp("edited_at", { withTimezone: true }),
       
       // Reply functionality
       replyToMessageId: uuid("reply_to_message_id").references((): any => messages.id),
       
       // Soft delete
       isDeleted: boolean("is_deleted").default(false).notNull(),
-      deletedAt: timestamp("deleted_at"),
+      deletedAt: timestamp("deleted_at", { withTimezone: true }),
       deletedBy: uuid("deleted_by").references(() => users.id),
       
-      createdAt: timestamp("created_at").defaultNow().notNull(),
-      updatedAt: timestamp("updated_at").defaultNow().notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+      updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     },
     (table) => ({
       conversationIdIdx: index("messages_conversation_id_idx").on(table.conversationId),

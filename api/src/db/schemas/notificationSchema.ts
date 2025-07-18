@@ -66,18 +66,18 @@ export const notifications = pgTable(
     
     // Status
     isRead: boolean("is_read").default(false).notNull(),
-    readAt: timestamp("read_at"),
+    readAt: timestamp("read_at", { withTimezone: true }),
     isEmailSent: boolean("is_email_sent").default(false).notNull(),
-    emailSentAt: timestamp("email_sent_at"),
+    emailSentAt: timestamp("email_sent_at", { withTimezone: true }),
     
     // Scheduling (for future notifications)
-    scheduledFor: timestamp("scheduled_for"), // When to show this notification
-    expiresAt: timestamp("expires_at"), // When notification becomes irrelevant
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }), // When to show this notification
+    expiresAt: timestamp("expires_at", { withTimezone: true }), // When notification becomes irrelevant
     
     isActive: boolean("is_active").default(true).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     userIdIdx: index("notifications_user_id_idx").on(table.userId),

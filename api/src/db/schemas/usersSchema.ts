@@ -18,8 +18,8 @@ export const users = pgTable('users', {
   isDeleted: boolean('is_deleted').default(false).notNull(),
   profileVerified: boolean('profile_verified').default(false).notNull(),
   profileCompleted: boolean('profile_completed').default(false).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Individual Profile Table
@@ -32,8 +32,8 @@ export const individualProfiles = pgTable('individual_profiles', {
   phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
   aboutYou: text('about_you'),
   specialNote: text('special_note'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   isDeleted: boolean('is_deleted').default(false).notNull(),
 }, (table) => ({
   userIdIdx: index('individual_profiles_user_id_idx').on(table.userId),
@@ -49,8 +49,8 @@ export const organizationProfiles = pgTable('organization_profiles', {
   phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
   address: text('address').notNull(),
   overview: text('overview'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   isDeleted: boolean('is_deleted').default(false).notNull(),
 }, (table) => ({
   userIdIdx: index('organization_profiles_user_id_idx').on(table.userId),
@@ -72,8 +72,8 @@ export const healthcareProfiles = pgTable('healthcare_profiles', {
   professionalSummary: text('professional_summary').notNull(),
   preferredTime: text('preferred_time').array(),
   experience: integer('experience'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   isDeleted: boolean('is_deleted').default(false).notNull(),
 }, (table) => ({
   userIdIdx: index('healthcare_profiles_user_id_idx').on(table.userId),
@@ -89,8 +89,8 @@ export const healthcareBankDetails = pgTable('healthcare_bank_details', {
   bankName: varchar('bank_name', { length: 255 }),
   isVerified: boolean('is_verified').default(false).notNull(),
   encryptionKeyId: varchar('encryption_key_id', { length: 255 }), // For additional encryption if needed
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   isDeleted: boolean('is_deleted').default(false).notNull(),
 }, (table) => ({
   healthcareProfileIdIdx: index('healthcare_bank_details_profile_id_idx').on(table.healthcareProfileId),
