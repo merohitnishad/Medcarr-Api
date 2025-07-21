@@ -177,7 +177,18 @@ export class NotificationService {
   ) {
     const conversationId = additionalData.metadata?.conversationId;
     const jobPostId = additionalData.jobPostId;
-
+    const senderId = additionalData.relatedUserId; // The person sending the message
+  
+    // CHANGE 2: Check if recipient is online and active in conversation
+    const socketManager = global.socketManager;
+    const isRecipientOnline = socketManager?.isUserOnline(userId);
+    const isRecipientInConversation = socketManager?.isUserInConversation(userId, conversationId);
+  
+    // CHANGE 3: If user is online and in the conversation, don't create/update notification
+    if (isRecipientOnline && isRecipientInConversation) {
+      return null; // Don't create notification
+    }
+  
     // Build where conditions dynamically
     const whereConditions = [
       eq(notifications.userId, userId),
@@ -186,31 +197,41 @@ export class NotificationService {
       eq(notifications.isActive, true),
       eq(notifications.isDeleted, false),
     ];
-
+  
     if (jobPostId) {
       whereConditions.push(eq(notifications.jobPostId, jobPostId));
     }
-
+  
     // Look for existing unread message notification for this conversation
     const existingNotification = await db.query.notifications.findFirst({
       where: and(...whereConditions),
       orderBy: [desc(notifications.createdAt)],
     });
-
+  
     // Check if existing notification matches this conversation
     const existingMetadata = existingNotification?.metadata as any;
     const matchingNotification =
       existingMetadata?.conversationId === conversationId
         ? existingNotification
         : null;
-
+  
     if (matchingNotification) {
+      // CHANGE 4: Add time check - don't update if last update was very recent (< 30 seconds)
+      const lastUpdated = new Date(matchingNotification.updatedAt).getTime();
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastUpdated;
+      
+      // If updated within last 30 seconds, don't update again
+      if (timeSinceLastUpdate < 30000) {
+        return matchingNotification;
+      }
+  
       // Update existing notification
       const currentMetadata = (matchingNotification.metadata as any) || {};
       const newCount = (matchingNotification.messageCount || 1) + 1;
       const senderName = replacements.senderName || "Someone";
       const messagePreview = replacements.messagePreview || "";
-
+  
       const [updatedNotification] = await db
         .update(notifications)
         .set({
@@ -221,7 +242,6 @@ export class NotificationService {
           message: newCount > 1 ? `Latest: ${messagePreview}` : messagePreview,
           messageCount: newCount,
           updatedAt: new Date(),
-          // Update metadata to include latest message info
           metadata: {
             ...currentMetadata,
             conversationId,
@@ -231,10 +251,9 @@ export class NotificationService {
         })
         .where(eq(notifications.id, matchingNotification.id))
         .returning();
-
-      const socketManager = global.socketManager;
-      if (socketManager && socketManager.isUserOnline(userId)) {
-        // Get full notification data with relations
+  
+      // CHANGE 5: Only send socket update if user is online but NOT in conversation
+      if (socketManager && isRecipientOnline && !isRecipientInConversation) {
         const fullNotification = await db.query.notifications.findFirst({
           where: eq(notifications.id, updatedNotification.id),
           with: {
@@ -243,22 +262,21 @@ export class NotificationService {
             jobApplication: { columns: { id: true, status: true } },
           },
         });
-
+  
         if (fullNotification) {
           socketManager.sendNotificationToUser(userId, fullNotification);
-
           const unreadCount = await this.getUnreadCount(userId);
           socketManager.sendNotificationCountUpdate(userId, unreadCount);
         }
       }
-
+  
       return updatedNotification;
     } else {
-      // Create new notification (no unread message notification exists for this conversation)
+      // Create new notification only if user is not actively in conversation
       let title = template.title;
       let message = template.message;
       let actionUrl = template.actionUrl;
-
+  
       Object.entries(replacements).forEach(([key, value]) => {
         const placeholder = `{${key}}`;
         title = title.replace(new RegExp(placeholder, "g"), value);
@@ -267,7 +285,7 @@ export class NotificationService {
           actionUrl = actionUrl.replace(new RegExp(placeholder, "g"), value);
         }
       });
-
+  
       return await this.createNotification({
         userId,
         type: template.type,
@@ -276,7 +294,7 @@ export class NotificationService {
         priority: template.priority,
         actionUrl,
         actionLabel: template.actionLabel,
-        messageCount: 1, // Initialize with 1
+        messageCount: 1,
         ...additionalData,
       });
     }
