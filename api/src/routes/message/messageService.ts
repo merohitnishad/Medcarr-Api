@@ -23,6 +23,13 @@ export interface SendMessageData {
   replyToMessageId?: string;
 }
 
+interface DeliveryResult {
+  conversationIds: string[];
+  messageIds?: string[];
+  timestamp?: Date;
+}
+
+
 export interface MessageFilters {
   page?: number;
   limit?: number;
@@ -542,51 +549,56 @@ export class MessageService {
   }
 
   // Mark messages as delivered
-  static async markMessagesAsDelivered(userId: string) {
-    return await db.transaction(async (tx) => {
-      // Find all conversations where user is a participant
-      const userConversations = await tx.query.conversations.findMany({
-        where: or(
-          eq(conversations.jobPosterId, userId),
-          eq(conversations.healthcareUserId, userId)
-        ),
-        columns: { id: true }
-      });
+  static async markMessagesAsDelivered(userId: string): Promise<DeliveryResult> {
+    try {      
+      // Find all undelivered messages sent TO this user
+      const undeliveredMessages = await db
+        .select({
+          id: messages.id,
+          conversationId: messages.conversationId,
+          senderId: messages.senderId,
+          createdAt: messages.createdAt
+        })
+        .from(messages)
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(
+          and(
+            // Messages sent TO the user who just came online
+            or(
+              and(eq(conversations.jobPosterId, userId), ne(messages.senderId, userId)),
+              and(eq(conversations.healthcareUserId, userId), ne(messages.senderId, userId))
+            ),
+            eq(messages.status, "sent") // Only update messages that are currently "sent"
+          )
+        );
 
-      const conversationIds = userConversations.map(conv => conv.id);
-
-      if (conversationIds.length === 0) return { conversationIds: [] };
-
-      // Get messages that need to be marked as delivered
-      const messagesToUpdate = await tx.query.messages.findMany({
-        where: and(
-          inArray(messages.conversationId, conversationIds),
-          ne(messages.senderId, userId), // Don't mark own messages
-          eq(messages.status, 'sent'),
-          eq(messages.isDeleted, false)
-        ),
-        columns: { id: true, conversationId: true }
-      });
-
-      const messageIds = messagesToUpdate.map(msg => msg.id);
-      const affectedConversations = [...new Set(messagesToUpdate.map(msg => msg.conversationId))];
-
-      // Mark messages as delivered
-      if (messageIds.length > 0) {
-        await tx
-          .update(messages)
-          .set({
-            status: 'delivered',
-            updatedAt: new Date(),
-          })
-          .where(inArray(messages.id, messageIds));
+      if (undeliveredMessages.length === 0) {
+        return { conversationIds: [] };
       }
 
-      return { 
-        conversationIds: affectedConversations,
-        messageIds: messageIds
+      // Update messages to delivered status
+      const messageIds = undeliveredMessages.map(msg => msg.id);
+      
+      await db
+        .update(messages)
+        .set({ 
+          status: "delivered",
+          updatedAt: new Date()
+        })
+        .where(inArray(messages.id, messageIds));
+
+      // Get unique conversation IDs that were affected
+      const conversationIds: string[] = [...new Set(undeliveredMessages.map(msg => msg.conversationId))];
+      
+      return {
+        conversationIds,
+        messageIds,
+        timestamp: new Date()
       };
-    });
+    } catch (error) {
+      console.error("❌ Error marking messages as delivered:", error);
+      throw error;
+    }
   }
 
   // Add this to your MessageService.ts

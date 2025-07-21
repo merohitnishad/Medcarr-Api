@@ -25,6 +25,7 @@ const httpServer = createServer(app);
 // Initialize Socket.io
 const socketManager = new SocketManager(httpServer);
 
+
 // Make socket manager available globally
 declare global {
   var socketManager: SocketManager;

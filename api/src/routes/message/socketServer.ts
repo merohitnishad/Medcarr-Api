@@ -202,6 +202,7 @@ class SocketManager {
       // Join user to their personal room
       socket.join(`user:${userId}`);
 
+
       // Notify ALL users about this user coming online
       this.io.emit("user:online", { userId, timestamp: new Date() });
 
@@ -211,16 +212,16 @@ class SocketManager {
         deliveryResult.conversationIds.length > 0
       ) {
         deliveryResult.conversationIds.forEach((conversationId) => {
+          // Emit to the specific conversation room with conversationId
           this.io
             .to(`conversation:${conversationId}`)
             .emit("messages:delivered", {
               userId,
-              conversationId,
+              conversationId, // Include the conversationId
               timestamp: new Date(),
             });
         });
       }
-
       // Send complete online users list to the newly connected user
       this.sendOnlineUsers(socket);
     } catch (error) {
@@ -267,7 +268,7 @@ class SocketManager {
           ...data,
           senderId: socket.userId,
         });
-
+          
         // Emit new message to conversation participants
         this.io.to(`conversation:${data.conversationId}`).emit("message:new", {
           message,
@@ -285,6 +286,8 @@ class SocketManager {
 
         // CHECK IF RECIPIENT IS ONLINE
         const recipientSocketId = this.getSocketIdByUserId(recipientId);
+        const isRecipientOnline = this.isUserOnline(recipientId);
+
 
         if (recipientSocketId) {
           // FETCH AND SEND UPDATED CONVERSATION LIST TO RECIPIENT
@@ -297,6 +300,40 @@ class SocketManager {
             conversations: updatedConversations.data,
           });
         }
+
+        if (isRecipientOnline) {
+            // AUTO-MARK MESSAGE AS DELIVERED if recipient is online
+            
+            try {
+              const deliveryResult = await MessageService.markMessagesAsDelivered(recipientId);
+              
+              if (deliveryResult.conversationIds && 
+                Array.isArray(deliveryResult.conversationIds) && 
+                deliveryResult.conversationIds.includes(data.conversationId as string)) {
+              // Emit delivery event to the conversation
+              const deliveryEventData = {
+                userId: recipientId,
+                conversationId: data.conversationId,
+                timestamp: new Date(),
+              };
+              
+              this.io.to(`conversation:${data.conversationId}`).emit("messages:delivered", deliveryEventData);
+            }
+            } catch (deliveryError) {
+              console.error(`❌ Error auto-marking as delivered:`, deliveryError);
+            }
+            
+            // FETCH AND SEND UPDATED CONVERSATION LIST TO RECIPIENT
+            const updatedConversations = await MessageService.getUserConversations(recipientId, {
+              limit: 20,
+            });
+      
+            this.io.to(recipientSocketId as string).emit("conversations:updated", {
+              conversations: updatedConversations.data,
+            });
+          } else {
+            console.log(`📴 Recipient ${recipientId} is offline - message will be delivered when they come online`);
+          }
       } catch (error) {
         console.error("Error sending message:", error);
         const errorMessage =
@@ -461,6 +498,40 @@ class SocketManager {
   public sendToConversation(conversationId: string, event: string, data: any) {
     this.io.to(`conversation:${conversationId}`).emit(event, data);
   }
+
+  // NEW: Send notification to specific user
+  public sendNotificationToUser(userId: string, notification: any) {
+    this.io.to(`user:${userId}`).emit("notification:new", {
+      notification,
+    });
+  }
+
+  // NEW: Send notification read event
+  public sendNotificationReadEvent(userId: string, notificationId: string) {
+    this.io.to(`user:${userId}`).emit("notification:read", {
+      notificationId,
+      userId,
+    });
+  }
+
+  // NEW: Send notification count update
+  public sendNotificationCountUpdate(userId: string, unreadCount: number) {
+    this.io.to(`user:${userId}`).emit("notification:count-updated", {
+      userId,
+      unreadCount,
+    });
+  }
 }
+
+let socketManager: SocketManager | null = null;
+
+export const initializeSocketManager = (httpServer: HTTPServer) => {
+  socketManager = new SocketManager(httpServer);
+  return socketManager;
+};
+
+export const getSocketManager = (): SocketManager | null => {
+  return socketManager;
+};
 
 export default SocketManager;

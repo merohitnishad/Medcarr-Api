@@ -9,6 +9,7 @@ import {
   text,
   pgEnum,
   json,
+  integer,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -51,6 +52,8 @@ export const notifications = pgTable(
     priority: notificationPriorityEnum("priority").default("normal").notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     message: text("message").notNull(),
+
+    messageCount: integer("message_count").default(1),
     
     // Related entities (optional)
     jobPostId: uuid("job_post_id").references(() => jobPosts.id, { onDelete: "set null" }),
@@ -201,8 +204,8 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
   },
   NEW_MESSAGE_RECEIVED: {
     type: 'new_message_received',
-    title: 'New Message',
-    message: '{senderName} sent you a message about "{jobTitle}": {messagePreview}',
+    title: 'New message from {senderName}', // Will be updated dynamically for multiple messages
+    message: '{messagePreview}', // Will be updated dynamically for multiple messages
     priority: 'normal',
     actionUrl: '/messages/{conversationId}',
     actionLabel: 'View Message'
