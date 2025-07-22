@@ -612,8 +612,10 @@ router.post('/bulk/parse', requireOrganizationRole, upload.single('file'), async
         return;
       }
 
+      const userId = req.user!.id;
+
       // Validate and parse the data
-      const validationResult = await JobPostService.parseBulkJobData(jsonData);
+      const validationResult = await JobPostService.parseBulkJobData(jsonData, userId);
 
       res.json({
         success: true,
@@ -704,7 +706,6 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
     const sampleData = [
       {
         age: 75,
-        relationship: 'Mother',
         gender: 'female',
         title: 'Daily Care for Elderly Mother',
         postcode: 'SW1A 1AA',
@@ -724,7 +725,6 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
       },
       {
         age: 82,
-        relationship: 'Father',
         gender: 'male',
         title: 'Weekly Care for Father with Dementia',
         postcode: 'M1 1AA',
@@ -753,17 +753,7 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
       XLSX.utils.book_append_sheet(workbook, sampleSheet, 'Sample Jobs');
       
             // Create comprehensive reference sheet with all options
-            const referenceData = [
-              { category: 'RELATIONSHIP OPTIONS', value: '', description: 'Choose from the following relationship options:' },
-              { category: '', value: 'Mother', description: 'Care for my mother' },
-              { category: '', value: 'Father', description: 'Care for my father' },
-              { category: '', value: 'Myself', description: 'Care for myself' },
-              { category: '', value: 'Grandmother', description: 'Care for my grandmother' },
-              { category: '', value: 'Grandfather', description: 'Care for my grandfather' },
-              { category: '', value: 'Spouse', description: 'Care for my spouse/partner' },
-              { category: '', value: 'Friend', description: 'Care for my friend' },
-              { category: '', value: 'Other', description: 'Other family member' },
-              
+            const referenceData = [              
               { category: 'GENDER OPTIONS', value: '', description: 'Choose from the following gender options:' },
               { category: '', value: 'male', description: 'Male' },
               { category: '', value: 'female', description: 'Female' },
@@ -800,7 +790,6 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
         '# Bulk Job Upload Template',
         '# Field Descriptions:',
         '# age: Age of person receiving care (0-120, required)',
-        '# relationship: Your relationship (Mother, Father, Myself, Grandmother, Grandfather, Spouse, Friend, Other)',
         '# gender: Gender of person receiving care (male, female, required)',
         '# title: Job title/summary (minimum 5 characters, required)',
         '# postcode: Postcode where care needed (required)',
@@ -818,7 +807,6 @@ router.get('/bulk/template', requireNonHealthCare, async (req: AuthenticatedRequ
         '# languages: Comma-separated languages (optional)',
         '# preferences: Comma-separated preferences (optional)',
         '#',
-        '# Example relationships: Mother, Father, Myself, Grandmother, Grandfather, Spouse, Other',
         '# Example care needs: Personal Care, Companionship, Dementia Care, Medication Management',
         '# Example languages: English, Spanish, French, German',
         '# Example preferences: Non-smoker, Pet-friendly, Experience with seniors',

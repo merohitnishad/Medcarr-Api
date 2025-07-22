@@ -34,6 +34,7 @@ export const relationshipEnum = pgEnum("relationship", [
   "Grandfather",
   "Spouse",
   "Friend",
+  "Organization",
   "Other"
 ]);
 export const caregiverGenderEnum = pgEnum("caregiver_gender", [
