@@ -1,7 +1,7 @@
 // routes/user/jobPost/index.ts - Clean, simplified version
 import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../../middlewares/authMiddleware.js';
-import { requireNonHealthCare, requireHealthcareRole, requireOrganizationRole } from '../../middlewares/roleAuth.js';
+import { requireNonHealthCare, requireHealthcareRole, requireOrganizationRole, requireNonAdmin } from '../../middlewares/roleAuth.js';
 import { JobPostService, CreateJobPostData, UpdateJobPostData, JobPostFilters } from './jobPostService.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
@@ -163,7 +163,7 @@ router.post('/createJob', requireNonHealthCare, async (req: AuthenticatedRequest
 });
 
 // Get dropdown options for job creation
-router.get('/options', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/options', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const [careNeeds, languages, preferences] = await Promise.all([
       JobPostService.getAvailableCareNeeds(),
@@ -195,13 +195,27 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
   try {
     const userId = req.user!.id;
 
+    // Helper function to convert string or array to array
+    const toArray = (value: any): string[] | undefined => {
+      if (!value) return undefined;
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') return value.split(',');
+      return undefined;
+    };
     const filters: JobPostFilters = {
       page: req.query.page ? parseInt(req.query.page as string) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
       postcode: req.query.postcode as string,
-      type: req.query.type as 'oneDay' | 'weekly',
-      paymentType: req.query.paymentType as 'hourly' | 'fixed',
-      caregiverGender: req.query.caregiverGender as 'male' | 'female',
+      type: toArray(req.query.type) as ('oneDay' | 'weekly')[],
+      paymentType: toArray(req.query.paymentType) as ('hourly' | 'fixed')[],
+      caregiverGender: toArray(req.query.caregiverGender) as ('male' | 'female')[],
+      minPaymentCost: req.query.minPaymentCost ? parseInt(req.query.minPaymentCost as string) : undefined,
+      maxPaymentCost: req.query.maxPaymentCost ? parseInt(req.query.maxPaymentCost as string) : undefined,
+      startDate: req.query.startDate as string,
+      shiftLengthRanges: req.query.shiftLength ? parseShiftLengthRanges(req.query.shiftLength as string) : undefined,
+      careNeedIds: toArray(req.query.careNeedIds),
+      languageIds: toArray(req.query.languageIds),
+      preferenceIds: toArray(req.query.preferenceIds),
     };
 
     // Remove undefined values
@@ -210,7 +224,7 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
         delete filters[key as keyof JobPostFilters];
       }
     });
-
+    
     const result = await JobPostService.getAllJobPosts(filters, userId);
 
     // Sanitize all job posts
@@ -866,5 +880,20 @@ router.get('/bulk/options', requireOrganizationRole, async (req: AuthenticatedRe
     return;
   }
 });
+
+function parseShiftLengthRanges(shiftLengthParam: string): Array<{min?: number, max?: number}> {
+  const shiftLengths = shiftLengthParam.split(',');
+  return shiftLengths.map(length => {
+    switch(length.trim()) {
+      case "below_2": return { max: 2 };
+      case "below_4": return { max: 4 };
+      case "below_6": return { max: 6 };
+      case "below_8": return { max: 8 };
+      case "below_10": return { max: 10 };
+      case "more_than_10": return { min: 10 };
+      default: return {};
+    }
+  }).filter(range => Object.keys(range).length > 0);
+}
 
 export default router;

@@ -25,6 +25,7 @@ import {
   inArray,
   or,
   notInArray,
+  lte,
 } from "drizzle-orm";
 
 export interface CreateJobPostData {
@@ -60,9 +61,16 @@ export interface JobPostFilters {
   page?: number;
   limit?: number;
   postcode?: string;
-  type?: "oneDay" | "weekly";
-  paymentType?: "hourly" | "fixed";
-  caregiverGender?: "male" | "female";
+  type?: ("oneDay" | "weekly")[];
+  paymentType?: ("hourly" | "fixed")[];
+  caregiverGender?: ("male" | "female")[];
+  minPaymentCost?: number;
+  maxPaymentCost?: number;
+  startDate?: string;
+  shiftLengthRanges?: Array<{min?: number, max?: number}>;
+  careNeedIds?: string[];
+  languageIds?: string[];
+  preferenceIds?: string[];
 }
 
 export interface BulkJobData {
@@ -414,28 +422,80 @@ export class JobPostService {
       type,
       paymentType,
       caregiverGender,
+      minPaymentCost,
+      maxPaymentCost,
+      startDate,
+      shiftLengthRanges,
+      careNeedIds,
+      languageIds,
+      preferenceIds,
     } = filters;
+    
     const offset = (page - 1) * limit;
-
+  
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, "open"),
       gte(jobPosts.jobDate, today),
     ];
-
+  
+    // Basic filters - use inArray for array filters
     if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
-    if (type) conditions.push(eq(jobPosts.type, type));
-    if (paymentType) conditions.push(eq(jobPosts.paymentType, paymentType));
-    if (caregiverGender)
-      conditions.push(eq(jobPosts.caregiverGender, caregiverGender));
-
+    if (type && type.length > 0) conditions.push(inArray(jobPosts.type, type));
+    if (paymentType && paymentType.length > 0) conditions.push(inArray(jobPosts.paymentType, paymentType));
+    if (caregiverGender && caregiverGender.length > 0) conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
+    
+    // Payment cost filters
+    if (minPaymentCost !== undefined) conditions.push(gte(jobPosts.paymentCost, minPaymentCost));
+    if (maxPaymentCost !== undefined) conditions.push(lte(jobPosts.paymentCost, maxPaymentCost));
+    
+    // Date filter
+    if (startDate) {
+      const filterDate = new Date(startDate);
+      
+      // Start of the selected day (00:00:00)
+      const dayStart = new Date(filterDate);
+      dayStart.setHours(0, 0, 0, 0);
+      
+      // End of the selected day (23:59:59.999)
+      const dayEnd = new Date(filterDate);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      // Add conditions for jobs within this day only
+      conditions.push(gte(jobPosts.jobDate, dayStart));
+      conditions.push(lte(jobPosts.jobDate, dayEnd));
+    }
+  
+    // Shift length filters
+    if (shiftLengthRanges && shiftLengthRanges.length > 0) {
+      const shiftConditions: any[] = [];
+      
+      for (const range of shiftLengthRanges) {
+        if (range.min !== undefined && range.max !== undefined) {
+          const condition = and(gte(jobPosts.shiftLength, range.min), lte(jobPosts.shiftLength, range.max));
+          if (condition) shiftConditions.push(condition);
+        } else if (range.min !== undefined) {
+          shiftConditions.push(gte(jobPosts.shiftLength, range.min));
+        } else if (range.max !== undefined) {
+          shiftConditions.push(lte(jobPosts.shiftLength, range.max));
+        }
+      }
+      
+      if (shiftConditions.length > 0) {
+        const orCondition = or(...shiftConditions);
+        if (orCondition) conditions.push(orCondition);
+      }
+    }
+    
+    // Get total count
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
-
+  
     let results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
@@ -448,13 +508,35 @@ export class JobPostService {
       },
       orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
     });
-
+  
+    // Apply relationship filters after initial query
+    if (careNeedIds && careNeedIds.length > 0) {
+      results = results.filter(job => 
+        job.careNeedsRelation.some(rel => careNeedIds.includes(rel.careNeed.id))
+      );
+    }
+  
+    if (languageIds && languageIds.length > 0) {
+      results = results.filter(job => 
+        job.languagesRelation.some(rel => languageIds.includes(rel.language.id))
+      );
+    }
+  
+    if (preferenceIds && preferenceIds.length > 0) {
+      results = results.filter(job => 
+        job.preferencesRelation.some(rel => preferenceIds.includes(rel.preference.id))
+      );
+    }
+  
+    // Update total count after relationship filtering
+    const filteredTotal = results.length;
+  
     // If userId is provided (healthcare user), check application status and handle distance
     if (userId) {
       // Get user's applications for all these jobs in one query
       const jobIds = results.map((job) => job.id);
       let appliedJobIds = new Set<string>();
-
+  
       if (jobIds.length > 0) {
         const userApplications = await db
           .select({ jobPostId: jobApplications.jobPostId })
@@ -466,15 +548,15 @@ export class JobPostService {
               inArray(jobApplications.jobPostId, jobIds)
             )
           );
-
+  
         appliedJobIds = new Set(userApplications.map((app) => app.jobPostId));
       }
-
+  
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
-
+  
       if (userPostcode) {
         const resultsWithDistanceAndStatus = [];
-
+  
         for (const job of results) {
           const distance = await this.calculateDistanceWithUnits(
             userPostcode,
@@ -486,7 +568,7 @@ export class JobPostService {
             applied: appliedJobIds.has(job.id), // Add applied status
           });
         }
-
+  
         resultsWithDistanceAndStatus.sort(
           (a, b) => a.distance.km - b.distance.km
         );
@@ -501,15 +583,15 @@ export class JobPostService {
     } else {
       results = results.slice(offset, offset + limit);
     }
-
+  
     return {
       data: results,
       pagination: {
         page,
         limit,
-        total: totalCount.count,
-        totalPages: Math.ceil(totalCount.count / limit),
-        hasNext: page < Math.ceil(totalCount.count / limit),
+        total: filteredTotal, // Use filtered total instead of original count
+        totalPages: Math.ceil(filteredTotal / limit),
+        hasNext: page < Math.ceil(filteredTotal / limit),
         hasPrev: page > 1,
       },
     };
