@@ -73,6 +73,13 @@ export interface JobPostFilters {
   preferenceIds?: string[];
 }
 
+export interface RepostJobData {
+  jobDate: string;
+  startTime: string;
+  endTime: string;
+  shiftLength: number;
+}
+
 export interface BulkJobData {
   age: number;
   gender: "male" | "female";
@@ -489,7 +496,7 @@ export class JobPostService {
         if (orCondition) conditions.push(orCondition);
       }
     }
-    
+
     // Get total count
     const [totalCount] = await db
       .select({ count: count() })
@@ -916,6 +923,263 @@ export class JobPostService {
     }
 
     return updatedJobPost;
+  }
+
+  // Repost expired job
+  static async repostExpiredJob(
+    jobPostId: string,
+    userId: string,
+    repostData: RepostJobData
+  ) {
+    return await db.transaction(async (tx) => {
+      // Get the original job post
+      const originalJob = await tx.query.jobPosts.findFirst({
+        where: and(
+          eq(jobPosts.id, jobPostId),
+          eq(jobPosts.userId, userId),
+          eq(jobPosts.isDeleted, false)
+        ),
+        with: {
+          careNeedsRelation: { with: { careNeed: true } },
+          languagesRelation: { with: { language: true } },
+          preferencesRelation: { with: { preference: true } },
+        },
+      });
+  
+      if (!originalJob) {
+        throw new Error("Job post not found or access denied");
+      }
+  
+      // Verify job is expired (job date is in the past and status is open)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const jobDate = new Date(originalJob.jobDate);
+      
+      if (jobDate >= today || originalJob.status !== "open") {
+        throw new Error("Job is not expired");
+      }
+  
+      // Check if job with new date and time already exists
+      const existingJob = await tx
+        .select({ id: jobPosts.id })
+        .from(jobPosts)
+        .where(
+          and(
+            eq(jobPosts.userId, userId),
+            eq(jobPosts.jobDate, new Date(repostData.jobDate)),
+            eq(jobPosts.startTime, repostData.startTime),
+            eq(jobPosts.isDeleted, false)
+          )
+        )
+        .limit(1);
+  
+      if (existingJob.length > 0) {
+        throw new Error("A job already exists for this date and time");
+      }
+  
+      // Create new job post with updated date/time
+      const [newJobPost] = await tx
+        .insert(jobPosts)
+        .values({
+          userId,
+          age: originalJob.age,
+          relationship: originalJob.relationship,
+          gender: originalJob.gender,
+          title: originalJob.title,
+          postcode: originalJob.postcode,
+          address: originalJob.address,
+          jobDate: new Date(repostData.jobDate),
+          startTime: repostData.startTime,
+          endTime: repostData.endTime,
+          shiftLength: repostData.shiftLength,
+          overview: originalJob.overview,
+          caregiverGender: originalJob.caregiverGender,
+          type: originalJob.type,
+          paymentType: originalJob.paymentType,
+          paymentCost: originalJob.paymentCost,
+          isRecurring: false, // Reposted jobs are always single jobs
+        })
+        .returning();
+  
+      // Copy care needs, languages, and preferences
+      if (originalJob.careNeedsRelation.length > 0) {
+        await tx.insert(jobPostCareNeeds).values(
+          originalJob.careNeedsRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            careNeedId: rel.careNeedId,
+          }))
+        );
+      }
+  
+      if (originalJob.languagesRelation.length > 0) {
+        await tx.insert(jobPostLanguages).values(
+          originalJob.languagesRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            languageId: rel.languageId,
+          }))
+        );
+      }
+  
+      if (originalJob.preferencesRelation.length > 0) {
+        await tx.insert(jobPostPreferences).values(
+          originalJob.preferencesRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            preferenceId: rel.preferenceId,
+          }))
+        );
+      }
+  
+      // Update original job status to closed
+      await tx
+        .update(jobPosts)
+        .set({
+          status: "closed",
+          updatedAt: new Date(),
+        })
+        .where(eq(jobPosts.id, jobPostId));
+  
+      // Update all job applications for the original job to closed status
+      await tx
+        .update(jobApplications)
+        .set({
+          status: "closed",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(jobApplications.jobPostId, jobPostId),
+            eq(jobApplications.isDeleted, false)
+          )
+        );
+  
+      return {
+        originalJobId: jobPostId,
+        newJob: newJobPost,
+        message: "Expired job reposted successfully"
+      };
+    });
+  }
+  
+  // Repost past job
+  static async repostPastJob(
+    jobPostId: string,
+    userId: string,
+    repostData: RepostJobData
+  ) {
+    return await db.transaction(async (tx) => {
+      // Get the original job post
+      const originalJob = await tx.query.jobPosts.findFirst({
+        where: and(
+          eq(jobPosts.id, jobPostId),
+          eq(jobPosts.userId, userId),
+          eq(jobPosts.isDeleted, false)
+        ),
+        with: {
+          careNeedsRelation: { with: { careNeed: true } },
+          languagesRelation: { with: { language: true } },
+          preferencesRelation: { with: { preference: true } },
+        },
+      });
+  
+      if (!originalJob) {
+        throw new Error("Job post not found or access denied");
+      }
+  
+      // Verify job is a past job (status not in ['open', 'approved'])
+      if (originalJob.status === "open" || originalJob.status === "approved") {
+        throw new Error("Job is not a past job");
+      }
+  
+      // Check if job with new date and time already exists
+      const existingJob = await tx
+        .select({ id: jobPosts.id })
+        .from(jobPosts)
+        .where(
+          and(
+            eq(jobPosts.userId, userId),
+            eq(jobPosts.jobDate, new Date(repostData.jobDate)),
+            eq(jobPosts.startTime, repostData.startTime),
+            eq(jobPosts.isDeleted, false)
+          )
+        )
+        .limit(1);
+  
+      if (existingJob.length > 0) {
+        throw new Error("A job already exists for this date and time");
+      }
+  
+      // Create new job post with updated date/time
+      const [newJobPost] = await tx
+        .insert(jobPosts)
+        .values({
+          userId,
+          age: originalJob.age,
+          relationship: originalJob.relationship,
+          gender: originalJob.gender,
+          title: originalJob.title,
+          postcode: originalJob.postcode,
+          address: originalJob.address,
+          jobDate: new Date(repostData.jobDate),
+          startTime: repostData.startTime,
+          endTime: repostData.endTime,
+          shiftLength: repostData.shiftLength,
+          overview: originalJob.overview,
+          caregiverGender: originalJob.caregiverGender,
+          type: originalJob.type,
+          paymentType: originalJob.paymentType,
+          paymentCost: originalJob.paymentCost,
+          isRecurring: false, // Reposted jobs are always single jobs
+        })
+        .returning();
+  
+      // Copy care needs, languages, and preferences
+      if (originalJob.careNeedsRelation.length > 0) {
+        await tx.insert(jobPostCareNeeds).values(
+          originalJob.careNeedsRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            careNeedId: rel.careNeedId,
+          }))
+        );
+      }
+  
+      if (originalJob.languagesRelation.length > 0) {
+        await tx.insert(jobPostLanguages).values(
+          originalJob.languagesRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            languageId: rel.languageId,
+          }))
+        );
+      }
+  
+      if (originalJob.preferencesRelation.length > 0) {
+        await tx.insert(jobPostPreferences).values(
+          originalJob.preferencesRelation.map((rel) => ({
+            jobPostId: newJobPost.id,
+            preferenceId: rel.preferenceId,
+          }))
+        );
+      }
+  
+      // Update all job applications for the original job to closed status
+      await tx
+        .update(jobApplications)
+        .set({
+          status: "closed",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(jobApplications.jobPostId, jobPostId),
+            eq(jobApplications.isDeleted, false)
+          )
+        );
+  
+      return {
+        originalJobId: jobPostId,
+        newJob: newJobPost,
+        message: "Past job reposted successfully"
+      };
+    });
   }
 
   // Validation and helper methods (keep existing ones)

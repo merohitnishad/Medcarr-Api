@@ -336,6 +336,166 @@ router.get('/my/expire-posts', requireNonHealthCare, async (req: AuthenticatedRe
     }
 });
 
+// Repost expired job with new date and time
+router.post('/repost/expired/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { jobPostId } = req.params;
+    const userId = req.user!.id;
+    const { jobDate, startTime, endTime, shiftLength } = req.body;
+
+    // Validate required fields
+    if (!jobDate || !startTime || !endTime || !shiftLength) {
+      res.status(400).json({
+        success: false,
+        error: 'jobDate, startTime, endTime, and shiftLength are required'
+      });
+      return;
+    }
+
+    // Validate job date is in the future
+    const newJobDate = new Date(jobDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (newJobDate < today) {
+      res.status(400).json({
+        success: false,
+        error: 'Job date must be in the future'
+      });
+      return;
+    }
+
+    // Validate time format and shift length
+    if (startTime >= endTime) {
+      res.status(400).json({
+        success: false,
+        error: 'End time must be after start time'
+      });
+      return;
+    }
+
+    if (shiftLength < 1 || shiftLength > 24) {
+      res.status(400).json({
+        success: false,
+        error: 'Shift length must be between 1 and 24 hours'
+      });
+      return;
+    }
+
+    const result = await JobPostService.repostExpiredJob(jobPostId, userId, {
+      jobDate,
+      startTime,
+      endTime,
+      shiftLength
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Expired job reposted successfully',
+      data: result
+    });
+    return;
+  } catch (error) {
+    console.error('Error in repost expired job route:', error);
+    if (error instanceof Error && (
+      error.message === 'Job post not found or access denied' ||
+      error.message === 'Job is not expired' ||
+      error.message.includes('already exists')
+    )) {
+      res.status(400).json({ 
+        success: false,
+        error: error.message 
+      });
+    } else {
+      res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to repost expired job' 
+      });
+    }
+    return;
+  }
+});
+
+// Repost past job with new date and time
+router.post('/repost/past/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { jobPostId } = req.params;
+    const userId = req.user!.id;
+    const { jobDate, startTime, endTime, shiftLength } = req.body;
+
+    // Validate required fields
+    if (!jobDate || !startTime || !endTime || !shiftLength) {
+      res.status(400).json({
+        success: false,
+        error: 'jobDate, startTime, endTime, and shiftLength are required'
+      });
+      return;
+    }
+
+    // Validate job date is in the future
+    const newJobDate = new Date(jobDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (newJobDate < today) {
+      res.status(400).json({
+        success: false,
+        error: 'Job date must be in the future'
+      });
+      return;
+    }
+
+    // Validate time format and shift length
+    if (startTime >= endTime) {
+      res.status(400).json({
+        success: false,
+        error: 'End time must be after start time'
+      });
+      return;
+    }
+
+    if (shiftLength < 1 || shiftLength > 24) {
+      res.status(400).json({
+        success: false,
+        error: 'Shift length must be between 1 and 24 hours'
+      });
+      return;
+    }
+
+    const result = await JobPostService.repostPastJob(jobPostId, userId, {
+      jobDate,
+      startTime,
+      endTime,
+      shiftLength
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Past job reposted successfully',
+      data: result
+    });
+    return;
+  } catch (error) {
+    console.error('Error in repost past job route:', error);
+    if (error instanceof Error && (
+      error.message === 'Job post not found or access denied' ||
+      error.message === 'Job is not a past job' ||
+      error.message.includes('already exists')
+    )) {
+      res.status(400).json({ 
+        success: false,
+        error: error.message 
+      });
+    } else {
+      res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to repost past job' 
+      });
+    }
+    return;
+  }
+});
+
 // Get a specific job post by ID (single, child, or parent - all treated the same)
 router.get('/:jobPostId', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {

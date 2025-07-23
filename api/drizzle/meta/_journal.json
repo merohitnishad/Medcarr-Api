@@ -57,6 +57,13 @@
       "when": 1753172343107,
       "tag": "0007_thin_piledriver",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1753271618019,
+      "tag": "0008_petite_tag",
+      "breakpoints": true
     }
   ]
 }

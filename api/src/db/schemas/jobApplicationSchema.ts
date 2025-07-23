@@ -21,6 +21,7 @@ export const applicationStatusEnum = pgEnum("application_status", [
   "accepted",
   "rejected",
   "cancelled",
+  "closed",
   "completed"
 ]);
 
