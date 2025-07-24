@@ -588,7 +588,7 @@ export class JobPostService {
           )
           .groupBy(jobApplications.jobPostId);
 
-        const applicantCountMap = new Map(
+        applicantCountMap = new Map(
           applicantCounts.map((item) => [item.jobPostId, item.count])
         );
       }
