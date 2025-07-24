@@ -67,7 +67,7 @@ export interface JobPostFilters {
   minPaymentCost?: number;
   maxPaymentCost?: number;
   startDate?: string;
-  shiftLengthRanges?: Array<{min?: number, max?: number}>;
+  shiftLengthRanges?: Array<{ min?: number; max?: number }>;
   careNeedIds?: string[];
   languageIds?: string[];
   preferenceIds?: string[];
@@ -230,7 +230,8 @@ export class JobPostService {
 
     const existingJobTimes = new Set(
       existingJobs.map(
-        (job: any) => `${job.jobDate.toISOString().split("T")[0]}-${job.startTime}`
+        (job: any) =>
+          `${job.jobDate.toISOString().split("T")[0]}-${job.startTime}`
       )
     );
 
@@ -437,52 +438,59 @@ export class JobPostService {
       languageIds,
       preferenceIds,
     } = filters;
-    
+
     const offset = (page - 1) * limit;
-  
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const conditions = [
       eq(jobPosts.isDeleted, false),
       eq(jobPosts.status, "open"),
       gte(jobPosts.jobDate, today),
     ];
-  
+
     // Basic filters - use inArray for array filters
     if (postcode) conditions.push(eq(jobPosts.postcode, postcode));
     if (type && type.length > 0) conditions.push(inArray(jobPosts.type, type));
-    if (paymentType && paymentType.length > 0) conditions.push(inArray(jobPosts.paymentType, paymentType));
-    if (caregiverGender && caregiverGender.length > 0) conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
-    
+    if (paymentType && paymentType.length > 0)
+      conditions.push(inArray(jobPosts.paymentType, paymentType));
+    if (caregiverGender && caregiverGender.length > 0)
+      conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
+
     // Payment cost filters
-    if (minPaymentCost !== undefined) conditions.push(gte(jobPosts.paymentCost, minPaymentCost));
-    if (maxPaymentCost !== undefined) conditions.push(lte(jobPosts.paymentCost, maxPaymentCost));
-    
+    if (minPaymentCost !== undefined)
+      conditions.push(gte(jobPosts.paymentCost, minPaymentCost));
+    if (maxPaymentCost !== undefined)
+      conditions.push(lte(jobPosts.paymentCost, maxPaymentCost));
+
     // Date filter
     if (startDate) {
       const filterDate = new Date(startDate);
-      
+
       // Start of the selected day (00:00:00)
       const dayStart = new Date(filterDate);
       dayStart.setHours(0, 0, 0, 0);
-      
+
       // End of the selected day (23:59:59.999)
       const dayEnd = new Date(filterDate);
       dayEnd.setHours(23, 59, 59, 999);
-      
+
       // Add conditions for jobs within this day only
       conditions.push(gte(jobPosts.jobDate, dayStart));
       conditions.push(lte(jobPosts.jobDate, dayEnd));
     }
-  
+
     // Shift length filters
     if (shiftLengthRanges && shiftLengthRanges.length > 0) {
       const shiftConditions: any[] = [];
-      
+
       for (const range of shiftLengthRanges) {
         if (range.min !== undefined && range.max !== undefined) {
-          const condition = and(gte(jobPosts.shiftLength, range.min), lte(jobPosts.shiftLength, range.max));
+          const condition = and(
+            gte(jobPosts.shiftLength, range.min),
+            lte(jobPosts.shiftLength, range.max)
+          );
           if (condition) shiftConditions.push(condition);
         } else if (range.min !== undefined) {
           shiftConditions.push(gte(jobPosts.shiftLength, range.min));
@@ -490,7 +498,7 @@ export class JobPostService {
           shiftConditions.push(lte(jobPosts.shiftLength, range.max));
         }
       }
-      
+
       if (shiftConditions.length > 0) {
         const orCondition = or(...shiftConditions);
         if (orCondition) conditions.push(orCondition);
@@ -502,7 +510,7 @@ export class JobPostService {
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
-  
+
     let results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
@@ -515,35 +523,42 @@ export class JobPostService {
       },
       orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
     });
-  
+
     // Apply relationship filters after initial query
     if (careNeedIds && careNeedIds.length > 0) {
-      results = results.filter(job => 
-        job.careNeedsRelation.some(rel => careNeedIds.includes(rel.careNeed.id))
+      results = results.filter((job) =>
+        job.careNeedsRelation.some((rel) =>
+          careNeedIds.includes(rel.careNeed.id)
+        )
       );
     }
-  
+
     if (languageIds && languageIds.length > 0) {
-      results = results.filter(job => 
-        job.languagesRelation.some(rel => languageIds.includes(rel.language.id))
+      results = results.filter((job) =>
+        job.languagesRelation.some((rel) =>
+          languageIds.includes(rel.language.id)
+        )
       );
     }
-  
+
     if (preferenceIds && preferenceIds.length > 0) {
-      results = results.filter(job => 
-        job.preferencesRelation.some(rel => preferenceIds.includes(rel.preference.id))
+      results = results.filter((job) =>
+        job.preferencesRelation.some((rel) =>
+          preferenceIds.includes(rel.preference.id)
+        )
       );
     }
-  
+
     // Update total count after relationship filtering
     const filteredTotal = results.length;
-  
+
     // If userId is provided (healthcare user), check application status and handle distance
     if (userId) {
       // Get user's applications for all these jobs in one query
       const jobIds = results.map((job) => job.id);
       let appliedJobIds = new Set<string>();
-  
+      let applicantCountMap = new Map<string, number>(); // Declare here
+
       if (jobIds.length > 0) {
         const userApplications = await db
           .select({ jobPostId: jobApplications.jobPostId })
@@ -555,15 +570,34 @@ export class JobPostService {
               inArray(jobApplications.jobPostId, jobIds)
             )
           );
-  
+
         appliedJobIds = new Set(userApplications.map((app) => app.jobPostId));
+
+        // Add this new query to get applicant counts
+        const applicantCounts = await db
+          .select({
+            jobPostId: jobApplications.jobPostId,
+            count: count(),
+          })
+          .from(jobApplications)
+          .where(
+            and(
+              eq(jobApplications.isDeleted, false),
+              inArray(jobApplications.jobPostId, jobIds)
+            )
+          )
+          .groupBy(jobApplications.jobPostId);
+
+        const applicantCountMap = new Map(
+          applicantCounts.map((item) => [item.jobPostId, item.count])
+        );
       }
-  
+
       const userPostcode = await this.getHealthcareProfilePostcode(userId);
-  
+
       if (userPostcode) {
         const resultsWithDistanceAndStatus = [];
-  
+
         for (const job of results) {
           const distance = await this.calculateDistanceWithUnits(
             userPostcode,
@@ -573,9 +607,10 @@ export class JobPostService {
             ...job,
             distance: distance,
             applied: appliedJobIds.has(job.id), // Add applied status
+            applicantsCount: applicantCountMap.get(job.id) || 0, // Add this line
           });
         }
-  
+
         resultsWithDistanceAndStatus.sort(
           (a, b) => a.distance.km - b.distance.km
         );
@@ -585,12 +620,13 @@ export class JobPostService {
         results = results.slice(offset, offset + limit).map((job) => ({
           ...job,
           applied: appliedJobIds.has(job.id),
+          applicantsCount: applicantCountMap.get(job.id) || 0,
         }));
       }
     } else {
       results = results.slice(offset, offset + limit);
     }
-  
+
     return {
       data: results,
       pagination: {
@@ -945,20 +981,20 @@ export class JobPostService {
           preferencesRelation: { with: { preference: true } },
         },
       });
-  
+
       if (!originalJob) {
         throw new Error("Job post not found or access denied");
       }
-  
+
       // Verify job is expired (job date is in the past and status is open)
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const jobDate = new Date(originalJob.jobDate);
-      
+
       if (jobDate >= today || originalJob.status !== "open") {
         throw new Error("Job is not expired");
       }
-  
+
       // Check if job with new date and time already exists
       const existingJob = await tx
         .select({ id: jobPosts.id })
@@ -972,11 +1008,11 @@ export class JobPostService {
           )
         )
         .limit(1);
-  
+
       if (existingJob.length > 0) {
         throw new Error("A job already exists for this date and time");
       }
-  
+
       // Create new job post with updated date/time
       const [newJobPost] = await tx
         .insert(jobPosts)
@@ -1000,7 +1036,7 @@ export class JobPostService {
           isRecurring: false, // Reposted jobs are always single jobs
         })
         .returning();
-  
+
       // Copy care needs, languages, and preferences
       if (originalJob.careNeedsRelation.length > 0) {
         await tx.insert(jobPostCareNeeds).values(
@@ -1010,7 +1046,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       if (originalJob.languagesRelation.length > 0) {
         await tx.insert(jobPostLanguages).values(
           originalJob.languagesRelation.map((rel) => ({
@@ -1019,7 +1055,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       if (originalJob.preferencesRelation.length > 0) {
         await tx.insert(jobPostPreferences).values(
           originalJob.preferencesRelation.map((rel) => ({
@@ -1028,7 +1064,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       // Update original job status to closed
       await tx
         .update(jobPosts)
@@ -1037,7 +1073,7 @@ export class JobPostService {
           updatedAt: new Date(),
         })
         .where(eq(jobPosts.id, jobPostId));
-  
+
       // Update all job applications for the original job to closed status
       await tx
         .update(jobApplications)
@@ -1051,15 +1087,15 @@ export class JobPostService {
             eq(jobApplications.isDeleted, false)
           )
         );
-  
+
       return {
         originalJobId: jobPostId,
         newJob: newJobPost,
-        message: "Expired job reposted successfully"
+        message: "Expired job reposted successfully",
       };
     });
   }
-  
+
   // Repost past job
   static async repostPastJob(
     jobPostId: string,
@@ -1080,16 +1116,16 @@ export class JobPostService {
           preferencesRelation: { with: { preference: true } },
         },
       });
-  
+
       if (!originalJob) {
         throw new Error("Job post not found or access denied");
       }
-  
+
       // Verify job is a past job (status not in ['open', 'approved'])
       if (originalJob.status === "open" || originalJob.status === "approved") {
         throw new Error("Job is not a past job");
       }
-  
+
       // Check if job with new date and time already exists
       const existingJob = await tx
         .select({ id: jobPosts.id })
@@ -1103,11 +1139,11 @@ export class JobPostService {
           )
         )
         .limit(1);
-  
+
       if (existingJob.length > 0) {
         throw new Error("A job already exists for this date and time");
       }
-  
+
       // Create new job post with updated date/time
       const [newJobPost] = await tx
         .insert(jobPosts)
@@ -1131,7 +1167,7 @@ export class JobPostService {
           isRecurring: false, // Reposted jobs are always single jobs
         })
         .returning();
-  
+
       // Copy care needs, languages, and preferences
       if (originalJob.careNeedsRelation.length > 0) {
         await tx.insert(jobPostCareNeeds).values(
@@ -1141,7 +1177,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       if (originalJob.languagesRelation.length > 0) {
         await tx.insert(jobPostLanguages).values(
           originalJob.languagesRelation.map((rel) => ({
@@ -1150,7 +1186,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       if (originalJob.preferencesRelation.length > 0) {
         await tx.insert(jobPostPreferences).values(
           originalJob.preferencesRelation.map((rel) => ({
@@ -1159,7 +1195,7 @@ export class JobPostService {
           }))
         );
       }
-  
+
       // Update all job applications for the original job to closed status
       await tx
         .update(jobApplications)
@@ -1173,11 +1209,11 @@ export class JobPostService {
             eq(jobApplications.isDeleted, false)
           )
         );
-  
+
       return {
         originalJobId: jobPostId,
         newJob: newJobPost,
-        message: "Past job reposted successfully"
+        message: "Past job reposted successfully",
       };
     });
   }
