@@ -874,10 +874,10 @@ export class JobApplicationService {
           }
         },
         cancelledByUser: {
-          columns: { id: true, name: true }
+          columns: { id: true, name: true, role: true }
         },
         completedByUser: {
-          columns: { id: true, name: true }
+          columns: { id: true, name: true, role: true }
         }
       }
     });
