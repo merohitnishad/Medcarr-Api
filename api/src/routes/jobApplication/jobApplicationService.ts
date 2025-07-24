@@ -872,6 +872,12 @@ export class JobApplicationService {
               }
             }
           }
+        },
+        cancelledByUser: {
+          columns: { id: true, name: true }
+        },
+        completedByUser: {
+          columns: { id: true, name: true }
         }
       }
     });
