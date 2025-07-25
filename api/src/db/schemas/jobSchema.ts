@@ -76,6 +76,7 @@ export const jobPosts = pgTable(
     recurringPattern: text("recurring_pattern"),// JSON string: {"frequency": "weekly", "days": ["monday", "saturday"], "endDate": "2025-12-31"}
     paymentType: paymentTypeEnum("payment_type").notNull(),
     paymentCost: integer("payment_cost").notNull(), // in cents to avoid decimal issues
+    isReviewed: boolean("is_reviewed").default(false).notNull(),
     isActive: boolean("is_active").default(true).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

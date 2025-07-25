@@ -1,14 +1,14 @@
 import { db } from "../../db/index.js";
-import { 
-  reviews, 
+import {
+  reviews,
   reviewHelpfulVotes,
-  reviewStatusEnum 
+  reviewStatusEnum,
 } from "../../db/schemas/reviewSchema.js";
-import { 
-  users, 
+import {
+  users,
   healthcareProfiles,
   individualProfiles,
-  organizationProfiles 
+  organizationProfiles,
 } from "../../db/schemas/usersSchema.js";
 import { jobPosts } from "../../db/schemas/jobSchema.js";
 import { eq, and, desc, asc, avg, count, sql, inArray } from "drizzle-orm";
@@ -140,8 +140,8 @@ export class ReviewService {
           eq(users.role, "healthcare")
         ),
         with: {
-          healthcareProfile: true
-        }
+          healthcareProfile: true,
+        },
       });
 
       if (!healthcareUser?.healthcareProfile) {
@@ -159,6 +159,15 @@ export class ReviewService {
         })
         .returning();
 
+      // Add this after successfully creating the review and before returning
+      await db
+        .update(jobPosts)
+        .set({
+          isReviewed: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobPosts.id, reviewData.jobPostId));
+
       return await this.getReviewById(createdReview.id);
     } catch (error) {
       console.error("Error creating review:", error);
@@ -169,22 +178,22 @@ export class ReviewService {
   }
 
   // Get review by ID with full details
-  static async getReviewById(reviewId: string, currentUserId?: string): Promise<Review> {
+  static async getReviewById(
+    reviewId: string,
+    currentUserId?: string
+  ): Promise<Review> {
     try {
       const result = await db.query.reviews.findFirst({
-        where: and(
-          eq(reviews.id, reviewId),
-          eq(reviews.isDeleted, false)
-        ),
+        where: and(eq(reviews.id, reviewId), eq(reviews.isDeleted, false)),
         with: {
           reviewer: {
             with: {
               individualProfile: true,
-              organizationProfile: true
-            }
+              organizationProfile: true,
+            },
           },
           jobPost: true,
-          helpfulVotes: true
+          helpfulVotes: true,
         },
       });
 
@@ -210,11 +219,16 @@ export class ReviewService {
     } = {}
   ): Promise<{ reviews: Review[]; total: number }> {
     try {
-      const { limit = 10, offset = 0, includePrivate = false, currentUserId } = options;
+      const {
+        limit = 10,
+        offset = 0,
+        includePrivate = false,
+        currentUserId,
+      } = options;
 
       const whereConditions = [
         eq(reviews.healthcareProviderId, healthcareProviderId),
-        eq(reviews.isDeleted, false)
+        eq(reviews.isDeleted, false),
       ];
 
       if (!includePrivate) {
@@ -228,11 +242,11 @@ export class ReviewService {
             reviewer: {
               with: {
                 individualProfile: true,
-                organizationProfile: true
-              }
+                organizationProfile: true,
+              },
             },
             jobPost: true,
-            helpfulVotes: true
+            helpfulVotes: true,
           },
           orderBy: [desc(reviews.createdAt)],
           limit,
@@ -242,16 +256,16 @@ export class ReviewService {
           .select({ count: count() })
           .from(reviews)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
-      const transformedReviews = reviewResults.map(review => 
+      const transformedReviews = reviewResults.map((review) =>
         this.transformReviewData(review, currentUserId)
       );
 
       return {
         reviews: transformedReviews,
-        total: totalCount
+        total: totalCount,
       };
     } catch (error) {
       console.error("Error fetching healthcare provider reviews:", error);
@@ -276,11 +290,11 @@ export class ReviewService {
           with: {
             healthcareProvider: {
               with: {
-                healthcareProfile: true
-              }
+                healthcareProfile: true,
+              },
             },
             jobPost: true,
-            helpfulVotes: true
+            helpfulVotes: true,
           },
           orderBy: [desc(reviews.createdAt)],
           limit,
@@ -289,20 +303,22 @@ export class ReviewService {
         db
           .select({ count: count() })
           .from(reviews)
-          .where(and(
-            eq(reviews.reviewerId, reviewerId),
-            eq(reviews.isDeleted, false)
-          ))
-          .then(result => result[0].count)
+          .where(
+            and(
+              eq(reviews.reviewerId, reviewerId),
+              eq(reviews.isDeleted, false)
+            )
+          )
+          .then((result) => result[0].count),
       ]);
 
-      const transformedReviews = reviewResults.map(review => 
+      const transformedReviews = reviewResults.map((review) =>
         this.transformReviewData(review, reviewerId)
       );
 
       return {
         reviews: transformedReviews,
-        total: totalCount
+        total: totalCount,
       };
     } catch (error) {
       console.error("Error fetching reviewer's reviews:", error);
@@ -330,7 +346,8 @@ export class ReviewService {
       }
 
       // Check if review can still be edited (e.g., within 24 hours)
-      const hoursSinceCreated = (Date.now() - existingReview.createdAt.getTime()) / (1000 * 60 * 60);
+      const hoursSinceCreated =
+        (Date.now() - existingReview.createdAt.getTime()) / (1000 * 60 * 60);
       if (hoursSinceCreated > 24) {
         throw new Error("Review can no longer be edited");
       }
@@ -395,7 +412,9 @@ export class ReviewService {
   }
 
   // Get review statistics for a healthcare provider
-  static async getReviewStats(healthcareProviderId: string): Promise<ReviewStats> {
+  static async getReviewStats(
+    healthcareProviderId: string
+  ): Promise<ReviewStats> {
     try {
       const reviewsData = await db
         .select({
@@ -407,11 +426,13 @@ export class ReviewService {
           wouldRecommend: reviews.wouldRecommend,
         })
         .from(reviews)
-        .where(and(
-          eq(reviews.healthcareProviderId, healthcareProviderId),
-          eq(reviews.isDeleted, false),
-          eq(reviews.isPublic, true)
-        ));
+        .where(
+          and(
+            eq(reviews.healthcareProviderId, healthcareProviderId),
+            eq(reviews.isDeleted, false),
+            eq(reviews.isPublic, true)
+          )
+        );
 
       if (reviewsData.length === 0) {
         return {
@@ -430,28 +451,40 @@ export class ReviewService {
 
       // Calculate statistics
       const totalReviews = reviewsData.length;
-      const averageRating = reviewsData.reduce((sum, r) => sum + r.rating, 0) / totalReviews;
+      const averageRating =
+        reviewsData.reduce((sum, r) => sum + r.rating, 0) / totalReviews;
 
       const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-      reviewsData.forEach(r => {
+      reviewsData.forEach((r) => {
         ratingDistribution[r.rating as keyof typeof ratingDistribution]++;
       });
 
       const categoryAverages = {
-        professionalism: reviewsData.reduce((sum, r) => sum + r.professionalismRating, 0) / totalReviews,
-        punctuality: reviewsData.reduce((sum, r) => sum + r.punctualityRating, 0) / totalReviews,
-        qualityOfCare: reviewsData.reduce((sum, r) => sum + r.qualityOfCareRating, 0) / totalReviews,
-        communication: reviewsData.reduce((sum, r) => sum + r.communicationRating, 0) / totalReviews,
+        professionalism:
+          reviewsData.reduce((sum, r) => sum + r.professionalismRating, 0) /
+          totalReviews,
+        punctuality:
+          reviewsData.reduce((sum, r) => sum + r.punctualityRating, 0) /
+          totalReviews,
+        qualityOfCare:
+          reviewsData.reduce((sum, r) => sum + r.qualityOfCareRating, 0) /
+          totalReviews,
+        communication:
+          reviewsData.reduce((sum, r) => sum + r.communicationRating, 0) /
+          totalReviews,
       };
 
-      const recommendationRate = (reviewsData.filter(r => r.wouldRecommend).length / totalReviews) * 100;
+      const recommendationRate =
+        (reviewsData.filter((r) => r.wouldRecommend).length / totalReviews) *
+        100;
 
       return {
         totalReviews,
         averageRating: Math.round(averageRating * 100) / 100,
         ratingDistribution,
         categoryAverages: {
-          professionalism: Math.round(categoryAverages.professionalism * 100) / 100,
+          professionalism:
+            Math.round(categoryAverages.professionalism * 100) / 100,
           punctuality: Math.round(categoryAverages.punctuality * 100) / 100,
           qualityOfCare: Math.round(categoryAverages.qualityOfCare * 100) / 100,
           communication: Math.round(categoryAverages.communication * 100) / 100,
@@ -487,13 +520,11 @@ export class ReviewService {
           .where(eq(reviewHelpfulVotes.id, existingVote.id));
       } else {
         // Create new vote
-        await db
-          .insert(reviewHelpfulVotes)
-          .values({
-            reviewId,
-            userId,
-            isHelpful,
-          });
+        await db.insert(reviewHelpfulVotes).values({
+          reviewId,
+          userId,
+          isHelpful,
+        });
       }
     } catch (error) {
       console.error("Error voting on review:", error);
@@ -502,7 +533,10 @@ export class ReviewService {
   }
 
   // Check if user can review a job
-  static async canReviewJob(userId: string, jobPostId: string): Promise<boolean> {
+  static async canReviewJob(
+    userId: string,
+    jobPostId: string
+  ): Promise<boolean> {
     try {
       const jobPost = await db.query.jobPosts.findFirst({
         where: and(
@@ -529,9 +563,13 @@ export class ReviewService {
   }
 
   // Delete review (soft delete)
-  static async deleteReview(reviewId: string, userId: string, isAdmin = false): Promise<boolean> {
+  static async deleteReview(
+    reviewId: string,
+    userId: string,
+    isAdmin = false
+  ): Promise<boolean> {
     try {
-      const whereCondition = isAdmin 
+      const whereCondition = isAdmin
         ? eq(reviews.id, reviewId)
         : and(eq(reviews.id, reviewId), eq(reviews.reviewerId, userId));
 
@@ -552,16 +590,18 @@ export class ReviewService {
   }
 
   // Validate review data
-  static validateReviewData(data: CreateReviewData | UpdateReviewData): string[] {
+  static validateReviewData(
+    data: CreateReviewData | UpdateReviewData
+  ): string[] {
     const errors: string[] = [];
 
-    if ('rating' in data && data.rating !== undefined) {
+    if ("rating" in data && data.rating !== undefined) {
       if (data.rating < 1 || data.rating > 5) {
         errors.push("Overall rating must be between 1 and 5");
       }
     }
 
-    if ('title' in data && data.title !== undefined) {
+    if ("title" in data && data.title !== undefined) {
       if (!data.title || data.title.trim().length < 5) {
         errors.push("Title must be at least 5 characters long");
       }
@@ -570,21 +610,25 @@ export class ReviewService {
       }
     }
 
-    if ('reviewText' in data && data.reviewText !== undefined) {
+    if ("reviewText" in data && data.reviewText !== undefined) {
       if (!data.reviewText || data.reviewText.trim().length < 20) {
         errors.push("Review text must be at least 20 characters long");
       }
     }
 
     const categoryRatings = [
-      'professionalismRating', 'punctualityRating', 
-      'qualityOfCareRating', 'communicationRating'
+      "professionalismRating",
+      "punctualityRating",
+      "qualityOfCareRating",
+      "communicationRating",
     ] as const;
 
-    categoryRatings.forEach(rating => {
+    categoryRatings.forEach((rating) => {
       if (rating in data && data[rating] !== undefined) {
         if (data[rating]! < 1 || data[rating]! > 5) {
-          errors.push(`${rating.replace('Rating', '')} rating must be between 1 and 5`);
+          errors.push(
+            `${rating.replace("Rating", "")} rating must be between 1 and 5`
+          );
         }
       }
     });
@@ -593,7 +637,10 @@ export class ReviewService {
   }
 
   // Transform raw database data to Review interface
-  private static transformReviewData(rawData: any, currentUserId?: string): Review {
+  private static transformReviewData(
+    rawData: any,
+    currentUserId?: string
+  ): Review {
     const review: Review = {
       id: rawData.id,
       jobPostId: rawData.jobPostId,
@@ -620,10 +667,11 @@ export class ReviewService {
 
     // Add reviewer info
     if (rawData.reviewer) {
-      const profileName = rawData.reviewer.individualProfile?.fullName || 
-                         rawData.reviewer.organizationProfile?.organizationName || 
-                         rawData.reviewer.name;
-      
+      const profileName =
+        rawData.reviewer.individualProfile?.fullName ||
+        rawData.reviewer.organizationProfile?.organizationName ||
+        rawData.reviewer.name;
+
       review.reviewer = {
         id: rawData.reviewer.id,
         name: rawData.reviewer.name,
@@ -643,10 +691,16 @@ export class ReviewService {
 
     // Calculate helpful votes
     if (rawData.helpfulVotes) {
-      const helpfulCount = rawData.helpfulVotes.filter((vote: any) => vote.isHelpful).length;
-      const notHelpfulCount = rawData.helpfulVotes.filter((vote: any) => !vote.isHelpful).length;
-      const userVote = currentUserId 
-        ? rawData.helpfulVotes.find((vote: any) => vote.userId === currentUserId)?.isHelpful
+      const helpfulCount = rawData.helpfulVotes.filter(
+        (vote: any) => vote.isHelpful
+      ).length;
+      const notHelpfulCount = rawData.helpfulVotes.filter(
+        (vote: any) => !vote.isHelpful
+      ).length;
+      const userVote = currentUserId
+        ? rawData.helpfulVotes.find(
+            (vote: any) => vote.userId === currentUserId
+          )?.isHelpful
         : undefined;
 
       review.helpfulVotes = {
