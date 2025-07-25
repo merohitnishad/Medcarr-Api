@@ -5,7 +5,7 @@ import {
   CreateReviewData, 
   UpdateReviewData 
 } from './reviewService.js';
-import { requireNonHealthCareAndAdmin } from '../../middlewares/roleAuth.js';
+import { requireNonAdmin, requireNonHealthCareAndAdmin } from '../../middlewares/roleAuth.js';
 
 const router = Router();
 
@@ -277,7 +277,7 @@ router.post('/:reviewId/vote', requireNonHealthCareAndAdmin, async (req: Authent
 });
 
 // Get reviews for a healthcare provider
-router.get('/healthcare/:healthcareProviderId', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/healthcare/:healthcareProviderId', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { healthcareProviderId } = req.params;
     const currentUserId = req.user?.id;
@@ -325,7 +325,7 @@ router.get('/healthcare/:healthcareProviderId', requireNonHealthCareAndAdmin, as
 });
 
 // Get review statistics for a healthcare provider
-router.get('/healthcare/:healthcareProviderId/stats', requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/healthcare/:healthcareProviderId/stats', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { healthcareProviderId } = req.params;
 
