@@ -30,7 +30,16 @@ import {
 
 export interface CreateJobPostData {
   age: number;
-  relationship?: string;
+  relationship:
+    | "Myself"
+    | "Mother"
+    | "Father"
+    | "Grandmother"
+    | "Grandfather"
+    | "Spouse"
+    | "Friend"
+    | "Organization"
+    | "Other";
   gender: "male" | "female";
   title: string;
   postcode: string;
@@ -152,22 +161,55 @@ export class JobPostService {
   ) {
     const jobDateTime = `${data.jobDate}-${data.startTime}`;
 
+    // Get user type to determine validation rules
+    const [user] = await tx
+      .select({ userRole: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    let whereConditions = [
+      eq(jobPosts.userId, userId),
+      eq(jobPosts.jobDate, new Date(data.jobDate)),
+      eq(jobPosts.startTime, data.startTime),
+      eq(jobPosts.isDeleted, false),
+    ];
+
+    // For organizations, check all job details for exact match
+    if (user.userRole === "organization") {
+      whereConditions.push(
+        eq(jobPosts.endTime, data.endTime),
+        eq(jobPosts.title, data.title),
+        eq(jobPosts.relationship, data.relationship),
+        eq(jobPosts.gender, data.gender),
+        eq(jobPosts.age, data.age),
+        eq(jobPosts.postcode, data.postcode),
+        eq(jobPosts.address, data.address),
+        eq(jobPosts.caregiverGender, data.caregiverGender),
+        eq(jobPosts.type, data.type),
+        eq(jobPosts.paymentType, data.paymentType),
+        eq(jobPosts.paymentCost, data.paymentCost),
+        eq(jobPosts.overview, data.overview)
+      );
+    } else {
+      // For individuals, only check basic time conflict
+      whereConditions.push(eq(jobPosts.relationship, data.relationship));
+    }
+
     const existingJob = await tx
       .select({ id: jobPosts.id })
       .from(jobPosts)
-      .where(
-        and(
-          eq(jobPosts.userId, userId),
-          eq(jobPosts.jobDate, new Date(data.jobDate)),
-          eq(jobPosts.startTime, data.startTime),
-          eq(jobPosts.isDeleted, false)
-        )
-      )
+      .where(and(...whereConditions))
       .limit(1);
 
     if (existingJob.length > 0) {
-      throw new Error("A job already exists for this date and time");
+      const errorMessage =
+        user.userType === "organization"
+          ? "A job with identical details already exists"
+          : `A job already exists for this date, time, and person (${data.relationship})`;
+      throw new Error(errorMessage);
     }
+
     const [jobPost] = await tx
       .insert(jobPosts)
       .values({
@@ -203,6 +245,12 @@ export class JobPostService {
   ) {
     const { frequency, selectedDays, endDate } = data.recurringData!;
 
+    const [user] = await tx
+      .select({ userRole: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
     // Generate individual job instances
     const jobInstances = this.generateRecurringJobDates(
       new Date(data.jobDate),
@@ -213,6 +261,33 @@ export class JobPostService {
     // Add the start date to the instances for validation
     const allJobDates = [new Date(data.jobDate), ...jobInstances];
 
+    let baseWhereConditions = [
+      eq(jobPosts.userId, userId),
+      eq(jobPosts.startTime, data.startTime),
+      eq(jobPosts.isDeleted, false),
+    ];
+
+    // For organizations, add all detail checks
+    if (user.userType === "organization") {
+      baseWhereConditions.push(
+        eq(jobPosts.endTime, data.endTime),
+        eq(jobPosts.title, data.title),
+        eq(jobPosts.relationship, data.relationship),
+        eq(jobPosts.gender, data.gender),
+        eq(jobPosts.age, data.age),
+        eq(jobPosts.postcode, data.postcode),
+        eq(jobPosts.address, data.address),
+        eq(jobPosts.caregiverGender, data.caregiverGender),
+        eq(jobPosts.type, data.type),
+        eq(jobPosts.paymentType, data.paymentType),
+        eq(jobPosts.paymentCost, data.paymentCost),
+        eq(jobPosts.overview, data.overview)
+      );
+    } else {
+      // For individuals, add relationship check
+      baseWhereConditions.push(eq(jobPosts.relationship, data.relationship));
+    }
+
     // Check for existing jobs with same date and time
     const existingJobs = await tx
       .select({
@@ -220,13 +295,7 @@ export class JobPostService {
         startTime: jobPosts.startTime,
       })
       .from(jobPosts)
-      .where(
-        and(
-          eq(jobPosts.userId, userId),
-          eq(jobPosts.startTime, data.startTime),
-          eq(jobPosts.isDeleted, false)
-        )
-      );
+      .where(and(...baseWhereConditions));
 
     const existingJobTimes = new Set(
       existingJobs.map(
@@ -247,11 +316,15 @@ export class JobPostService {
       const conflictDates = conflicts.map(
         (date) => date.toISOString().split("T")[0]
       );
-      throw new Error(
-        `Jobs already exist for the following dates at ${
-          data.startTime
-        }: ${conflictDates.join(", ")}`
-      );
+      const errorMessage =
+        user.userType === "organization"
+          ? `Jobs with identical details already exist for the following dates: ${conflictDates.join(
+              ", "
+            )}`
+          : `Jobs already exist for the following dates at ${
+              data.startTime
+            }: ${conflictDates.join(", ")}`;
+      throw new Error(errorMessage);
     }
 
     // Create parent job (template)
@@ -1645,12 +1718,19 @@ export class JobPostService {
     const failed: Array<{ row: number; data: BulkJobData; error: string }> = [];
 
     // Get mapping data once
-    const [availableCareNeeds, availableLanguages, availablePreferences] =
+    const [user, availableCareNeeds, availableLanguages, availablePreferences] =
       await Promise.all([
+        db
+          .select({ role: users.role })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1),
         this.getAvailableCareNeeds(),
         this.getAvailableLanguages(),
         this.getAvailablePreferences(),
       ]);
+
+    const userRole = user[0]?.role;
 
     const careNeedMap = new Map(
       availableCareNeeds.map((cn) => [cn.name.toLowerCase(), cn.id])
@@ -1661,6 +1741,27 @@ export class JobPostService {
     const preferenceMap = new Map(
       availablePreferences.map((p) => [p.name.toLowerCase(), p.id])
     );
+
+    // For organizations, check for duplicates within the bulk data itself
+    if (userRole === "organization") {
+      const duplicatesWithinBulk = this.findDuplicatesInBulkData(validJobData);
+      if (duplicatesWithinBulk.length > 0) {
+        // Add duplicates to failed array
+        duplicatesWithinBulk.forEach((duplicate) => {
+          failed.push({
+            row: duplicate.rowNumber || 0,
+            data: duplicate,
+            error: "Duplicate job found within bulk data",
+          });
+        });
+
+        // Remove duplicates from processing
+        validJobData = validJobData.filter(
+          (job) =>
+            !duplicatesWithinBulk.some((dup) => dup.rowNumber === job.rowNumber)
+        );
+      }
+    }
 
     for (const jobData of validJobData) {
       try {
@@ -1746,6 +1847,44 @@ export class JobPostService {
         failedJobs: failed.length,
       },
     };
+  }
+
+  // Helper method to find duplicates within bulk data
+  private static findDuplicatesInBulkData(
+    jobData: BulkJobData[]
+  ): BulkJobData[] {
+    const seen = new Set<string>();
+    const duplicates: BulkJobData[] = [];
+
+    for (const job of jobData) {
+      // Create a unique key for the job based on all parameters
+      const jobKey = JSON.stringify({
+        age: job.age,
+        gender: job.gender,
+        title: job.title,
+        postcode: job.postcode,
+        address: job.address,
+        jobDate: job.jobDate,
+        startTime: job.startTime,
+        endTime: job.endTime,
+        shiftLength: job.shiftLength,
+        overview: job.overview,
+        caregiverGender: job.caregiverGender,
+        paymentType: job.paymentType,
+        paymentCost: job.paymentCost,
+        careNeeds: job.careNeeds,
+        languages: job.languages,
+        preferences: job.preferences,
+      });
+
+      if (seen.has(jobKey)) {
+        duplicates.push(job);
+      } else {
+        seen.add(jobKey);
+      }
+    }
+
+    return duplicates;
   }
 
   // Helper parsing methods
