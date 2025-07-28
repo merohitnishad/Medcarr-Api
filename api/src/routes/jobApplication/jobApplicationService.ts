@@ -602,7 +602,7 @@ export class JobApplicationService {
         .returning();
 
       // If this was an accepted application that was cancelled before check-in, reopen the job
-      if (application.status === "accepted" && !application.checkedInAt) {
+      if (application.status === "accepted") {
         // Check if there are other pending applications
         const pendingApplications = await tx.query.jobApplications.findMany({
           where: and(
