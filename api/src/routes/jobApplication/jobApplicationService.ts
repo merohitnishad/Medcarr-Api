@@ -613,7 +613,7 @@ export class JobApplicationService {
         });
 
         // Only reopen if there are pending applications waiting
-        if (pendingApplications.length > 0) {
+        // if (pendingApplications.length > 0) {
           await tx
             .update(jobPosts)
             .set({
@@ -621,7 +621,7 @@ export class JobApplicationService {
               updatedAt: new Date(),
             })
             .where(eq(jobPosts.id, application.jobPostId));
-        }
+        // }
       }
 
       // Create notification for the other party
