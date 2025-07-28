@@ -715,39 +715,138 @@ export class JobPostService {
 
   // Get user's job posts
   static async getUserJobPosts(userId: string, filters: JobPostFilters = {}) {
-    const { page = 1, limit = 10 } = filters;
+    const { 
+      page = 1, 
+      limit = 10, 
+      postcode, 
+      type, 
+      paymentType, 
+      caregiverGender, 
+      minPaymentCost, 
+      maxPaymentCost, 
+      startDate, 
+      shiftLengthRanges,
+      careNeedIds,
+      languageIds,
+      preferenceIds
+    } = filters;
+    
     const offset = (page - 1) * limit;
-
+  
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
+  
     const conditions = [
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
       or(eq(jobPosts.status, "open"), eq(jobPosts.status, "approved")),
       gte(jobPosts.jobDate, today),
     ];
+  
+    // Add filters based on the interface
+    if (postcode) {
+      conditions.push(eq(jobPosts.postcode, postcode));
+    }
+  
+    if (type && type.length > 0) {
+      conditions.push(inArray(jobPosts.type, type));
+    }
+  
+    if (paymentType && paymentType.length > 0) {
+      conditions.push(inArray(jobPosts.paymentType, paymentType));
+    }
+  
+    if (caregiverGender && caregiverGender.length > 0) {
+      conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
+    }
+  
+    if (minPaymentCost !== undefined) {
+      conditions.push(gte(jobPosts.paymentCost, minPaymentCost));
+    }
+  
+    if (maxPaymentCost !== undefined) {
+      conditions.push(lte(jobPosts.paymentCost, maxPaymentCost));
+    }
+  
+    if (startDate) {
+      const filterDate = new Date(startDate);
+      filterDate.setHours(0, 0, 0, 0);
+      conditions.push(gte(jobPosts.jobDate, filterDate));
+    }
+  
+    // Handle shift length ranges
+    if (shiftLengthRanges && shiftLengthRanges.length > 0) {
+      const shiftConditions: any[] = [];
 
+      for (const range of shiftLengthRanges) {
+        if (range.min !== undefined && range.max !== undefined) {
+          const condition = and(
+            gte(jobPosts.shiftLength, range.min),
+            lte(jobPosts.shiftLength, range.max)
+          );
+          if (condition) shiftConditions.push(condition);
+        } else if (range.min !== undefined) {
+          shiftConditions.push(gte(jobPosts.shiftLength, range.min));
+        } else if (range.max !== undefined) {
+          shiftConditions.push(lte(jobPosts.shiftLength, range.max));
+        }
+      }
+
+      if (shiftConditions.length > 0) {
+        const orCondition = or(...shiftConditions);
+        if (orCondition) conditions.push(orCondition);
+      }
+    }
+  
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
-
-    const results = await db.query.jobPosts.findMany({
+  
+    let query = db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
         careNeedsRelation: { with: { careNeed: true } },
         languagesRelation: { with: { language: true } },
         preferencesRelation: { with: { preference: true } },
       },
-      orderBy: [asc(jobPosts.jobDate), asc(jobPosts.startTime)],
+      orderBy: [desc(jobPosts.createdAt)],
       limit,
       offset,
     });
-
-    // Get job applications for all jobs with healthcare user details
-    const jobIds = results.map((job) => job.id);
-
+  
+    const results = await query;
+  
+    // Filter by related data (care needs, languages, preferences)
+    let filteredResults = results;
+  
+    if (careNeedIds && careNeedIds.length > 0) {
+      filteredResults = filteredResults.filter(job => 
+        job.careNeedsRelation.some(relation => 
+          careNeedIds.includes(relation.careNeedId)
+        )
+      );
+    }
+  
+    if (languageIds && languageIds.length > 0) {
+      filteredResults = filteredResults.filter(job => 
+        job.languagesRelation.some(relation => 
+          languageIds.includes(relation.languageId)
+        )
+      );
+    }
+  
+    if (preferenceIds && preferenceIds.length > 0) {
+      filteredResults = filteredResults.filter(job => 
+        job.preferencesRelation.some(relation => 
+          preferenceIds.includes(relation.preferenceId)
+        )
+      );
+    }
+  
+    // Get job applications for filtered jobs
+    const jobIds = filteredResults.map((job) => job.id);
+  
     if (jobIds.length > 0) {
       const applications = await db
         .select({
@@ -762,15 +861,11 @@ export class JobPostService {
         .innerJoin(healthcareProfiles, eq(users.id, healthcareProfiles.userId))
         .where(
           and(
-            eq(jobApplications.isDeleted, false)
-            // Use 'in' operator with jobIds array
-            // Note: You'll need to import 'inArray' from drizzle-orm
-            // import { eq, and, desc, count, asc, gte, ne, lt, inArray } from 'drizzle-orm';
-            // inArray(jobApplications.jobPostId, jobIds)
+            eq(jobApplications.isDeleted, false),
+            inArray(jobApplications.jobPostId, jobIds)
           )
         );
-
-      // Group applications by job
+  
       const applicationsByJob = applications.reduce((acc, app) => {
         if (!acc[app.jobPostId]) {
           acc[app.jobPostId] = [];
@@ -787,42 +882,40 @@ export class JobPostService {
         });
         return acc;
       }, {} as Record<string, any[]>);
-
-      // Add applicants and totalApplications to each job
-      const resultsWithApplications = results.map((job) => ({
+  
+      const resultsWithApplications = filteredResults.map((job) => ({
         ...job,
         applicants: applicationsByJob[job.id] || [],
         totalApplications: applicationsByJob[job.id]?.length || 0,
       }));
-
+  
       return {
         data: resultsWithApplications,
         pagination: {
           page,
           limit,
-          total: totalCount.count,
-          totalPages: Math.ceil(totalCount.count / limit),
-          hasNext: page < Math.ceil(totalCount.count / limit),
+          total: filteredResults.length, // Use filtered count
+          totalPages: Math.ceil(filteredResults.length / limit),
+          hasNext: page < Math.ceil(filteredResults.length / limit),
           hasPrev: page > 1,
         },
       };
     }
-
-    // If no jobs, return original results with empty applicants
-    const resultsWithApplications = results.map((job) => ({
+  
+    const resultsWithApplications = filteredResults.map((job) => ({
       ...job,
       applicants: [],
       totalApplications: 0,
     }));
-
+  
     return {
       data: resultsWithApplications,
       pagination: {
         page,
         limit,
-        total: totalCount.count,
-        totalPages: Math.ceil(totalCount.count / limit),
-        hasNext: page < Math.ceil(totalCount.count / limit),
+        total: filteredResults.length,
+        totalPages: Math.ceil(filteredResults.length / limit),
+        hasNext: page < Math.ceil(filteredResults.length / limit),
         hasPrev: page > 1,
       },
     };

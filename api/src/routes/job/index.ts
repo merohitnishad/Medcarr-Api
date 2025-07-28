@@ -250,11 +250,49 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
 router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const filters: JobPostFilters = {
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
-    };
-
+        // Helper function to parse array parameters
+        const parseArrayParam = (param: any): string[] | undefined => {
+          if (!param) return undefined;
+          if (Array.isArray(param)) return param;
+          if (typeof param === 'string') return param.split(',');
+          return undefined;
+        };
+    
+        // Helper function to parse shift length ranges
+        const parseShiftLengthRanges = (param: any): Array<{ min?: number; max?: number }> | undefined => {
+          if (!param) return undefined;
+          try {
+            if (typeof param === 'string') {
+              return JSON.parse(param);
+            }
+            return param;
+          } catch {
+            return undefined;
+          }
+        };
+    
+        const filters: JobPostFilters = {
+          page: req.query.page ? parseInt(req.query.page as string) : 1,
+          limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+          postcode: req.query.postcode as string,
+          type: parseArrayParam(req.query.type) as ("oneDay" | "weekly")[] | undefined,
+          paymentType: parseArrayParam(req.query.paymentType) as ("hourly" | "fixed")[] | undefined,
+          caregiverGender: parseArrayParam(req.query.caregiverGender) as ("male" | "female")[] | undefined,
+          minPaymentCost: req.query.minPaymentCost ? parseFloat(req.query.minPaymentCost as string) : undefined,
+          maxPaymentCost: req.query.maxPaymentCost ? parseFloat(req.query.maxPaymentCost as string) : undefined,
+          startDate: req.query.startDate as string,
+          shiftLengthRanges: parseShiftLengthRanges(req.query.shiftLengthRanges),
+          careNeedIds: parseArrayParam(req.query.careNeedIds),
+          languageIds: parseArrayParam(req.query.languageIds),
+          preferenceIds: parseArrayParam(req.query.preferenceIds),
+        };
+    
+        // Remove undefined values to keep the filters object clean
+        Object.keys(filters).forEach(key => {
+          if (filters[key as keyof JobPostFilters] === undefined) {
+            delete filters[key as keyof JobPostFilters];
+          }
+        });
     const result = await JobPostService.getUserJobPosts(userId, filters);
 
     // Sanitize all job posts
