@@ -293,6 +293,7 @@ router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, 
             delete filters[key as keyof JobPostFilters];
           }
         });
+
     const result = await JobPostService.getUserJobPosts(userId, filters);
 
     // Sanitize all job posts

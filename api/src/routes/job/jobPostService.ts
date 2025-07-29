@@ -770,8 +770,18 @@ export class JobPostService {
   
     if (startDate) {
       const filterDate = new Date(startDate);
-      filterDate.setHours(0, 0, 0, 0);
-      conditions.push(gte(jobPosts.jobDate, filterDate));
+
+      // Start of the selected day (00:00:00)
+      const dayStart = new Date(filterDate);
+      dayStart.setHours(0, 0, 0, 0);
+
+      // End of the selected day (23:59:59.999)
+      const dayEnd = new Date(filterDate);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      // Add conditions for jobs within this day only
+      conditions.push(gte(jobPosts.jobDate, dayStart));
+      conditions.push(lte(jobPosts.jobDate, dayEnd));
     }
   
     // Handle shift length ranges
