@@ -190,7 +190,7 @@ router.get('/options', requireNonAdmin, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// Get all job posts with pagination and filters (shows individual jobs only)
+// Get all job posts with pagination and filters (shows jobs only for healthcare users)
 router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -246,7 +246,7 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// Get current user's job posts (shows individual jobs only)
+// Get current user's job posts (shows jobs only for client users)
 router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;

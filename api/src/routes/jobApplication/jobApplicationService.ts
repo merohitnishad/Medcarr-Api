@@ -64,21 +64,21 @@ export class JobApplicationService {
           },
         },
       });
-
+  
       if (!jobPost) {
         throw new Error("Job post not found or no longer available");
       }
-
+  
       // Check if job date is in the future
       const jobDate = new Date(jobPost.jobDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-
+  
       if (jobDate < today) {
         throw new Error("Cannot apply for past jobs");
       }
-
-      // Check if user already applied
+  
+      // Check if user already applied to this specific job
       const existingApplication = await tx.query.jobApplications.findFirst({
         where: and(
           eq(jobApplications.jobPostId, data.jobPostId),
@@ -86,11 +86,11 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         ),
       });
-
+  
       if (existingApplication) {
         throw new Error("You have already applied for this job");
       }
-
+  
       // Check if job already has an accepted application
       const acceptedApplication = await tx.query.jobApplications.findFirst({
         where: and(
@@ -99,21 +99,65 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         ),
       });
-
+  
       if (acceptedApplication) {
         throw new Error("This job already has an accepted applicant");
       }
-
+  
+      // NEW: Check if user has accepted applications for jobs with overlapping time periods
+      const conflictingApplications = await tx.query.jobApplications.findMany({
+        where: and(
+          eq(jobApplications.healthcareUserId, data.healthcareUserId),
+          eq(jobApplications.status, "accepted"),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          jobPost: {
+            columns: { 
+              id: true, 
+              title: true, 
+              jobDate: true, 
+              startTime: true, 
+              endTime: true 
+            },
+          },
+        },
+      });
+  
+      // Check for time conflicts
+      if (conflictingApplications.length > 0) {
+        const currentJobStart = new Date(`${jobPost.jobDate}T${jobPost.startTime}`);
+        const currentJobEnd = new Date(`${jobPost.jobDate}T${jobPost.endTime}`);
+  
+        for (const conflict of conflictingApplications) {
+          const conflictJobStart = new Date(`${conflict.jobPost.jobDate}T${conflict.jobPost.startTime}`);
+          const conflictJobEnd = new Date(`${conflict.jobPost.jobDate}T${conflict.jobPost.endTime}`);
+  
+          // Check if there's any overlap between the time periods
+          const hasOverlap = (
+            currentJobStart < conflictJobEnd && currentJobEnd > conflictJobStart
+          );
+  
+          if (hasOverlap) {
+            throw new Error(
+              `You have already been assigned for a job on this time period. ` +
+              `Conflicting job: "${conflict.jobPost.title}" on ${conflict.jobPost.jobDate} ` +
+              `from ${conflict.jobPost.startTime} to ${conflict.jobPost.endTime}`
+            );
+          }
+        }
+      }
+  
       // Get healthcare user details
       const healthcareUser = await tx.query.users.findFirst({
         where: eq(users.id, data.healthcareUserId),
         columns: { id: true, name: true, email: true, role: true },
       });
-
+  
       if (!healthcareUser || healthcareUser.role !== "healthcare") {
         throw new Error("Invalid healthcare user");
       }
-
+  
       // Create application
       const [application] = await tx
         .insert(jobApplications)
@@ -124,12 +168,12 @@ export class JobApplicationService {
           status: "pending",
         })
         .returning();
-
+  
       // IMPORTANT: Check if application was created successfully
       if (!application || !application.id) {
         throw new Error("Failed to create application");
       }
-
+  
       // Return all the data needed for notification
       return {
         application,
@@ -137,7 +181,7 @@ export class JobApplicationService {
         healthcareUser,
       };
     });
-
+  
     // Step 2: Create notification OUTSIDE the transaction (after commit)
     try {
       // Verify the application exists before creating notification
@@ -145,12 +189,12 @@ export class JobApplicationService {
         where: eq(jobApplications.id, result.application.id),
         columns: { id: true },
       });
-
+  
       if (!verifyApplication) {
         console.error("Application not found after transaction commit!");
         throw new Error("Application verification failed");
       }
-
+  
       await NotificationService.createFromTemplate(
         "JOB_APPLICATION_RECEIVED",
         result.jobPost.userId,
@@ -171,7 +215,7 @@ export class JobApplicationService {
       // Don't fail the application creation if notification fails
       // The application is still valid even if notification fails
     }
-
+  
     return result.application;
   }
 
