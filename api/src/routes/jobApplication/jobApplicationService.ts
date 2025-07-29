@@ -126,12 +126,29 @@ export class JobApplicationService {
   
       // Check for time conflicts
       if (conflictingApplications.length > 0) {
-        const currentJobStart = new Date(`${jobPost.jobDate}T${jobPost.startTime}`);
-        const currentJobEnd = new Date(`${jobPost.jobDate}T${jobPost.endTime}`);
+        // Helper function to create datetime from date and time strings
+        const createDateTime = (date: string | Date, time: string): Date => {
+          const dateStr = date instanceof Date ? date.toISOString().split('T')[0] : String(date);
+          const timeStr = String(time); // time column returns "HH:MM:SS" format
+          return new Date(`${dateStr}T${timeStr}`);
+        };
+  
+        const currentJobStart = createDateTime(jobPost.jobDate, jobPost.startTime);
+        const currentJobEnd = createDateTime(jobPost.jobDate, jobPost.endTime);
+  
+        // Validate current job dates
+        if (isNaN(currentJobStart.getTime()) || isNaN(currentJobEnd.getTime())) {
+          throw new Error('Invalid job date or time format for current job');
+        }
   
         for (const conflict of conflictingApplications) {
-          const conflictJobStart = new Date(`${conflict.jobPost.jobDate}T${conflict.jobPost.startTime}`);
-          const conflictJobEnd = new Date(`${conflict.jobPost.jobDate}T${conflict.jobPost.endTime}`);
+          const conflictJobStart = createDateTime(conflict.jobPost.jobDate, conflict.jobPost.startTime);
+          const conflictJobEnd = createDateTime(conflict.jobPost.jobDate, conflict.jobPost.endTime);
+  
+          // Validate conflict job dates
+          if (isNaN(conflictJobStart.getTime()) || isNaN(conflictJobEnd.getTime())) {
+            continue; // Skip this conflict check if dates are invalid
+          }
   
           // Check if there's any overlap between the time periods
           const hasOverlap = (
