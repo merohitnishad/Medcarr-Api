@@ -227,7 +227,8 @@ export class JobApplicationService {
             title: true,
             type: true,
             jobDate: true,
-            postcode: true, // Add postcode to calculate distance
+            postcode: true,
+            status: true // Add postcode to calculate distance
           },
         },
       },
@@ -402,21 +403,26 @@ export class JobApplicationService {
           },
         },
       });
-
+  
       if (!application) {
         throw new Error("Application not found");
       }
-
+  
       // Verify job ownership
       if (application.jobPost.userId !== userId) {
         throw new Error("Access denied");
       }
-
+  
+      // Check if job post is already approved
+      if (application.jobPost.status === "approved") {
+        throw new Error("Job post has already been approved and cannot be modified");
+      }
+  
       // Check if application is still pending
       if (application.status !== "pending") {
         throw new Error("Application has already been processed");
       }
-
+  
       // Update the application
       const [updatedApplication] = await tx
         .update(jobApplications)
@@ -428,7 +434,7 @@ export class JobApplicationService {
         })
         .where(eq(jobApplications.id, applicationId))
         .returning();
-
+  
       // Only process acceptance logic if the application was accepted
       if (data.status === "accepted") {
         // Update job post status
@@ -439,7 +445,7 @@ export class JobApplicationService {
             updatedAt: new Date(),
           })
           .where(eq(jobPosts.id, application.jobPostId));
-
+  
         // Find all other applications by the same healthcare user that are pending or accepted
         const conflictingApplications = await tx.query.jobApplications.findMany(
           {
@@ -450,7 +456,7 @@ export class JobApplicationService {
               ),
               ne(jobApplications.id, applicationId), // Exclude current application
               eq(jobApplications.isDeleted, false),
-              inArray(jobApplications.status, ["pending", "accepted"])
+              inArray(jobApplications.status, ["pending"])
             ),
             with: {
               jobPost: {
@@ -465,7 +471,7 @@ export class JobApplicationService {
             },
           }
         );
-
+  
         // Get current job timing for comparison
         const currentJob = application.jobPost;
         const currentStartDateTime = new Date(
@@ -478,11 +484,11 @@ export class JobApplicationService {
             currentJob.endTime
           }`
         );
-
+  
         // Filter applications that have time conflicts
         const conflictingIds: string[] = [];
         const conflictingJobTitles: string[] = [];
-
+  
         conflictingApplications.forEach((conflictApp) => {
           const conflictJob = conflictApp.jobPost;
           const conflictStartDateTime = new Date(
@@ -495,18 +501,18 @@ export class JobApplicationService {
               conflictJob.endTime
             }`
           );
-
+  
           // Check for time overlap
           const hasTimeConflict =
             currentStartDateTime < conflictEndDateTime &&
             currentEndDateTime > conflictStartDateTime;
-
+  
           if (hasTimeConflict) {
             conflictingIds.push(conflictApp.id);
             conflictingJobTitles.push(conflictJob.title);
           }
         });
-
+  
         // Update conflicting applications to 'not-available'
         if (conflictingIds.length > 0) {
           await tx
@@ -520,7 +526,7 @@ export class JobApplicationService {
             .where(inArray(jobApplications.id, conflictingIds));
         }
       }
-
+  
       // Create notification for healthcare worker about the main application
       const templateKey =
         data.status === "accepted"
@@ -541,7 +547,7 @@ export class JobApplicationService {
           sendEmail: true,
         }
       );
-
+  
       return updatedApplication;
     });
   }
@@ -1064,6 +1070,7 @@ export class JobApplicationService {
             jobDate: true,
             startTime: true,
             endTime: true,
+            status: true
           },
         },
       },
