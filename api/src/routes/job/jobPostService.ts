@@ -715,79 +715,79 @@ export class JobPostService {
 
   // Get user's job posts
   static async getUserJobPosts(userId: string, filters: JobPostFilters = {}) {
-    const { 
-      page = 1, 
-      limit = 10, 
-      postcode, 
-      type, 
-      paymentType, 
-      caregiverGender, 
-      minPaymentCost, 
-      maxPaymentCost, 
-      startDate, 
+    const {
+      page = 1,
+      limit = 10,
+      postcode,
+      type,
+      paymentType,
+      caregiverGender,
+      minPaymentCost,
+      maxPaymentCost,
+      startDate,
       shiftLengthRanges,
       careNeedIds,
       languageIds,
-      preferenceIds
+      preferenceIds,
     } = filters;
-    
+
     const offset = (page - 1) * limit;
-  
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-  
+
     const conditions = [
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
       or(eq(jobPosts.status, "open"), eq(jobPosts.status, "approved")),
       gte(jobPosts.jobDate, today),
     ];
-  
+
     // Add filters based on the interface
     if (postcode) {
       conditions.push(eq(jobPosts.postcode, postcode));
     }
-  
+
     if (type && type.length > 0) {
       conditions.push(inArray(jobPosts.type, type));
     }
-  
+
     if (paymentType && paymentType.length > 0) {
       conditions.push(inArray(jobPosts.paymentType, paymentType));
     }
-  
+
     if (caregiverGender && caregiverGender.length > 0) {
       conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
     }
-  
+
     if (minPaymentCost !== undefined) {
       conditions.push(gte(jobPosts.paymentCost, minPaymentCost));
     }
-  
+
     if (maxPaymentCost !== undefined) {
       conditions.push(lte(jobPosts.paymentCost, maxPaymentCost));
     }
-  
+
     if (startDate) {
       const filterDate = new Date(startDate);
-  
+
       // Start of the selected day (00:00:00)
       const dayStart = new Date(filterDate);
       dayStart.setHours(0, 0, 0, 0);
-  
+
       // End of the selected day (23:59:59.999)
       const dayEnd = new Date(filterDate);
       dayEnd.setHours(23, 59, 59, 999);
-  
+
       // Add conditions for jobs within this day only
       conditions.push(gte(jobPosts.jobDate, dayStart));
       conditions.push(lte(jobPosts.jobDate, dayEnd));
     }
-  
+
     // Handle shift length ranges
     if (shiftLengthRanges && shiftLengthRanges.length > 0) {
       const shiftConditions: any[] = [];
-  
+
       for (const range of shiftLengthRanges) {
         if (range.min !== undefined && range.max !== undefined) {
           const condition = and(
@@ -801,19 +801,19 @@ export class JobPostService {
           shiftConditions.push(lte(jobPosts.shiftLength, range.max));
         }
       }
-  
+
       if (shiftConditions.length > 0) {
         const orCondition = or(...shiftConditions);
         if (orCondition) conditions.push(orCondition);
       }
     }
-  
+
     // Get total count before relationship filtering
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
-  
+
     // Get ALL results first (without limit/offset) to apply relationship filters
     let results = await db.query.jobPosts.findMany({
       where: and(...conditions),
@@ -825,7 +825,7 @@ export class JobPostService {
       orderBy: [desc(jobPosts.createdAt)],
       // Remove limit and offset here - apply after filtering
     });
-  
+
     // Apply relationship filters after initial query (same as getAllJobPosts)
     if (careNeedIds && careNeedIds.length > 0) {
       results = results.filter((job) =>
@@ -834,7 +834,7 @@ export class JobPostService {
         )
       );
     }
-  
+
     if (languageIds && languageIds.length > 0) {
       results = results.filter((job) =>
         job.languagesRelation.some((rel) =>
@@ -842,7 +842,7 @@ export class JobPostService {
         )
       );
     }
-  
+
     if (preferenceIds && preferenceIds.length > 0) {
       results = results.filter((job) =>
         job.preferencesRelation.some((rel) =>
@@ -850,14 +850,14 @@ export class JobPostService {
         )
       );
     }
-  
+
     // Update total count after relationship filtering
     const filteredTotal = results.length;
-  
+
     // Get job applications for ALL filtered jobs (before pagination)
     const jobIds = results.map((job) => job.id);
     let applicationsByJob: Record<string, any[]> = {};
-  
+
     if (jobIds.length > 0) {
       const applications = await db
         .select({
@@ -876,7 +876,7 @@ export class JobPostService {
             inArray(jobApplications.jobPostId, jobIds)
           )
         );
-  
+
       applicationsByJob = applications.reduce((acc, app) => {
         if (!acc[app.jobPostId]) {
           acc[app.jobPostId] = [];
@@ -894,17 +894,17 @@ export class JobPostService {
         return acc;
       }, {} as Record<string, any[]>);
     }
-  
+
     // Apply pagination AFTER all filtering
     const paginatedResults = results.slice(offset, offset + limit);
-  
+
     // Add applications to paginated results
     const resultsWithApplications = paginatedResults.map((job) => ({
       ...job,
       applicants: applicationsByJob[job.id] || [],
       totalApplications: applicationsByJob[job.id]?.length || 0,
     }));
-  
+
     return {
       data: resultsWithApplications,
       pagination: {
@@ -1557,7 +1557,7 @@ export class JobPostService {
     );
 
     // Track datetime combinations within the current bulk upload
-    const currentBulkJobTimes = new Set<string>();
+    const currentBulkJobKeys = new Set<string>();
 
     const careNeedMap = new Map(
       availableCareNeeds.map((cn) => [cn.name.toLowerCase(), cn.id])
@@ -1619,19 +1619,29 @@ export class JobPostService {
 
       // Validate data quality
       // Add validation for duplicate job datetime after parsing jobDate and startTime
+      // Add validation for duplicate jobs after parsing all fields
       if (jobData.jobDate && jobData.startTime) {
         const jobDateTime = `${jobData.jobDate}-${jobData.startTime}`;
 
-        // Check against existing jobs in database
+        // Check against existing jobs in database (only date and time check)
         if (existingJobTimes.has(jobDateTime)) {
           errors.push("A job already exists for this date and time");
         }
 
-        // Check against other jobs in current bulk upload
-        if (currentBulkJobTimes.has(jobDateTime)) {
-          errors.push("Duplicate job date and time found within this upload");
+        // Create comprehensive key for duplicate detection within current upload
+        const jobKey = `${jobData.title || ""}-${jobData.jobDate}-${
+          jobData.startTime
+        }-${jobData.age || ""}-${jobData.gender || ""}-${
+          jobData.postcode || ""
+        }-${jobData.address || ""}`;
+
+        // Check against other jobs in current bulk upload (comprehensive check)
+        if (currentBulkJobKeys.has(jobKey)) {
+          errors.push(
+            "Duplicate job found within this upload (same title, date, time, age, gender, postcode, and address)"
+          );
         } else {
-          currentBulkJobTimes.add(jobDateTime);
+          currentBulkJobKeys.add(jobKey);
         }
       }
 
@@ -1689,12 +1699,6 @@ export class JobPostService {
       ) {
         errors.push("End time must be after start time");
       }
-
-      // Validate and convert care needs, languages, preferences with better error messages
-      // if (jobData.relationship === undefined && row.relationship) {
-      //   const availableRelationships = ['Mother', 'Father', 'Myself', 'Grandmother', 'Grandfather', 'Spouse', 'Friend', 'Other'];
-      //   errors.push(`Invalid relationship: [${row.relationship}]. Available options: [${availableRelationships.join(', ')}]`);
-      // }
 
       if (jobData.gender === undefined && row.gender) {
         const availableGenders = ["male", "female"];
