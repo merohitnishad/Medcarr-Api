@@ -770,15 +770,15 @@ export class JobPostService {
   
     if (startDate) {
       const filterDate = new Date(startDate);
-
+  
       // Start of the selected day (00:00:00)
       const dayStart = new Date(filterDate);
       dayStart.setHours(0, 0, 0, 0);
-
+  
       // End of the selected day (23:59:59.999)
       const dayEnd = new Date(filterDate);
       dayEnd.setHours(23, 59, 59, 999);
-
+  
       // Add conditions for jobs within this day only
       conditions.push(gte(jobPosts.jobDate, dayStart));
       conditions.push(lte(jobPosts.jobDate, dayEnd));
@@ -787,7 +787,7 @@ export class JobPostService {
     // Handle shift length ranges
     if (shiftLengthRanges && shiftLengthRanges.length > 0) {
       const shiftConditions: any[] = [];
-
+  
       for (const range of shiftLengthRanges) {
         if (range.min !== undefined && range.max !== undefined) {
           const condition = and(
@@ -801,19 +801,21 @@ export class JobPostService {
           shiftConditions.push(lte(jobPosts.shiftLength, range.max));
         }
       }
-
+  
       if (shiftConditions.length > 0) {
         const orCondition = or(...shiftConditions);
         if (orCondition) conditions.push(orCondition);
       }
     }
   
+    // Get total count before relationship filtering
     const [totalCount] = await db
       .select({ count: count() })
       .from(jobPosts)
       .where(and(...conditions));
   
-    let query = db.query.jobPosts.findMany({
+    // Get ALL results first (without limit/offset) to apply relationship filters
+    let results = await db.query.jobPosts.findMany({
       where: and(...conditions),
       with: {
         careNeedsRelation: { with: { careNeed: true } },
@@ -821,41 +823,40 @@ export class JobPostService {
         preferencesRelation: { with: { preference: true } },
       },
       orderBy: [desc(jobPosts.createdAt)],
-      limit,
-      offset,
+      // Remove limit and offset here - apply after filtering
     });
   
-    const results = await query;
-  
-    // Filter by related data (care needs, languages, preferences)
-    let filteredResults = results;
-  
+    // Apply relationship filters after initial query (same as getAllJobPosts)
     if (careNeedIds && careNeedIds.length > 0) {
-      filteredResults = filteredResults.filter(job => 
-        job.careNeedsRelation.some(relation => 
-          careNeedIds.includes(relation.careNeedId)
+      results = results.filter((job) =>
+        job.careNeedsRelation.some((rel) =>
+          careNeedIds.includes(rel.careNeed.id)
         )
       );
     }
   
     if (languageIds && languageIds.length > 0) {
-      filteredResults = filteredResults.filter(job => 
-        job.languagesRelation.some(relation => 
-          languageIds.includes(relation.languageId)
+      results = results.filter((job) =>
+        job.languagesRelation.some((rel) =>
+          languageIds.includes(rel.language.id)
         )
       );
     }
   
     if (preferenceIds && preferenceIds.length > 0) {
-      filteredResults = filteredResults.filter(job => 
-        job.preferencesRelation.some(relation => 
-          preferenceIds.includes(relation.preferenceId)
+      results = results.filter((job) =>
+        job.preferencesRelation.some((rel) =>
+          preferenceIds.includes(rel.preference.id)
         )
       );
     }
   
-    // Get job applications for filtered jobs
-    const jobIds = filteredResults.map((job) => job.id);
+    // Update total count after relationship filtering
+    const filteredTotal = results.length;
+  
+    // Get job applications for ALL filtered jobs (before pagination)
+    const jobIds = results.map((job) => job.id);
+    let applicationsByJob: Record<string, any[]> = {};
   
     if (jobIds.length > 0) {
       const applications = await db
@@ -876,7 +877,7 @@ export class JobPostService {
           )
         );
   
-      const applicationsByJob = applications.reduce((acc, app) => {
+      applicationsByJob = applications.reduce((acc, app) => {
         if (!acc[app.jobPostId]) {
           acc[app.jobPostId] = [];
         }
@@ -892,30 +893,16 @@ export class JobPostService {
         });
         return acc;
       }, {} as Record<string, any[]>);
-  
-      const resultsWithApplications = filteredResults.map((job) => ({
-        ...job,
-        applicants: applicationsByJob[job.id] || [],
-        totalApplications: applicationsByJob[job.id]?.length || 0,
-      }));
-  
-      return {
-        data: resultsWithApplications,
-        pagination: {
-          page,
-          limit,
-          total: filteredResults.length, // Use filtered count
-          totalPages: Math.ceil(filteredResults.length / limit),
-          hasNext: page < Math.ceil(filteredResults.length / limit),
-          hasPrev: page > 1,
-        },
-      };
     }
   
-    const resultsWithApplications = filteredResults.map((job) => ({
+    // Apply pagination AFTER all filtering
+    const paginatedResults = results.slice(offset, offset + limit);
+  
+    // Add applications to paginated results
+    const resultsWithApplications = paginatedResults.map((job) => ({
       ...job,
-      applicants: [],
-      totalApplications: 0,
+      applicants: applicationsByJob[job.id] || [],
+      totalApplications: applicationsByJob[job.id]?.length || 0,
     }));
   
     return {
@@ -923,9 +910,9 @@ export class JobPostService {
       pagination: {
         page,
         limit,
-        total: filteredResults.length,
-        totalPages: Math.ceil(filteredResults.length / limit),
-        hasNext: page < Math.ceil(filteredResults.length / limit),
+        total: filteredTotal, // Use filtered total instead of original count
+        totalPages: Math.ceil(filteredTotal / limit),
+        hasNext: page < Math.ceil(filteredTotal / limit),
         hasPrev: page > 1,
       },
     };
