@@ -945,7 +945,7 @@ export class JobPostService {
         careNeedsRelation: { with: { careNeed: true } },
         languagesRelation: { with: { language: true } },
         preferencesRelation: { with: { preference: true } },
-        applications: {
+        completedApplication: {
           where: eq(jobApplications.status, "completed"),
           with: {
             healthcareUser: {
