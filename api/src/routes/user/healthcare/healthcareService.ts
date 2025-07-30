@@ -138,7 +138,7 @@ export class HealthcareService {
   // Get healthcare user with complete profile using relations
   static async getCompleteProfile(
     userId: string,
-    includeReviews: boolean = false
+    includeReviews: boolean = true
   ): Promise<UserWithProfile | null> {
     try {
       const result = await db.query.users.findFirst({
