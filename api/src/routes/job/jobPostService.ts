@@ -945,6 +945,16 @@ export class JobPostService {
         careNeedsRelation: { with: { careNeed: true } },
         languagesRelation: { with: { language: true } },
         preferencesRelation: { with: { preference: true } },
+        applications: {
+          where: eq(jobApplications.status, "completed"),
+          with: {
+            healthcareUser: {
+              with: {
+                healthcareProfile: true
+              }
+            }
+          }
+        }
       },
       orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
       limit,

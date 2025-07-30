@@ -20,6 +20,7 @@ import {
   healthcareProfiles,
 } from "./usersSchema";
 import { reviews } from "./reviewSchema";
+import { jobApplications } from "./jobApplicationSchema";
 // import { reviews } from "./reviewSchema";
 
 // Enums for job post
@@ -193,6 +194,8 @@ export const jobPostsRelations = relations(jobPosts, ({ one, many }) => ({
   preferencesRelation: many(jobPostPreferences),
 
   reviews: many(reviews),
+
+  applications: many(jobApplications),
 }));
 
 export const jobPostCareNeedsRelations = relations(jobPostCareNeeds, ({ one }) => ({
