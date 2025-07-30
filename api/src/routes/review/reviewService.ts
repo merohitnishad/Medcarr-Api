@@ -114,7 +114,8 @@ export class ReviewService {
         where: and(
           eq(jobPosts.id, reviewData.jobPostId),
           eq(jobPosts.status, "completed"),
-          eq(jobPosts.userId, reviewerId) // Only job poster can review
+          eq(jobPosts.userId, reviewerId), // Only job poster can review
+          eq(jobPosts.isDeleted, false) // Only job poster can review
         ),
       });
 
@@ -126,7 +127,8 @@ export class ReviewService {
       const existingReview = await db.query.reviews.findFirst({
         where: and(
           eq(reviews.jobPostId, reviewData.jobPostId),
-          eq(reviews.reviewerId, reviewerId)
+          eq(reviews.reviewerId, reviewerId),
+          eq(reviews.isDeleted, false)
         ),
       });
 
@@ -138,7 +140,8 @@ export class ReviewService {
       const healthcareUser = await db.query.users.findFirst({
         where: and(
           eq(users.id, reviewData.healthcareProviderId),
-          eq(users.role, "healthcare")
+          eq(users.role, "healthcare"),
+          eq(users.isDeleted, false)
         ),
         with: {
           healthcareProfile: true,
