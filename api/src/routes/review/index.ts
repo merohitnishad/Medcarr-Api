@@ -10,7 +10,7 @@ import { requireNonAdmin, requireNonHealthCareAndAdmin } from '../../middlewares
 const router = Router();
 
 // Create a new review for a completed job
-router.post('/',requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/submit',requireNonHealthCareAndAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const reviewData: CreateReviewData = req.body;
