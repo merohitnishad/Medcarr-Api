@@ -592,23 +592,54 @@ export class ReviewService {
       const whereCondition = isAdmin
         ? eq(reviews.id, reviewId)
         : and(eq(reviews.id, reviewId), eq(reviews.reviewerId, userId));
-
-      const result = await db
-        .update(reviews)
-        .set({
-          isDeleted: true,
-          updatedAt: new Date(),
-        })
+  
+      // First, get the review to find the associated jobPostId
+      const reviewToDelete = await db
+        .select({ jobPostId: reviews.jobPostId })
+        .from(reviews)
         .where(whereCondition)
-        .returning({ id: reviews.id });
-
+        .limit(1);
+  
+      if (reviewToDelete.length === 0) {
+        return false; // Review not found or user doesn't have permission
+      }
+  
+      const jobPostId = reviewToDelete[0].jobPostId;
+  
+      // Use a transaction to ensure both operations succeed or fail together
+      const result = await db.transaction(async (tx) => {
+        // Delete the review (soft delete)
+        const deletedReview = await tx
+          .update(reviews)
+          .set({
+            isDeleted: true,
+            updatedAt: new Date(),
+          })
+          .where(whereCondition)
+          .returning({ id: reviews.id });
+  
+        if (deletedReview.length === 0) {
+          throw new Error("Failed to delete review");
+        }
+  
+        // Update the job post's isReviewed to false
+        await tx
+          .update(jobPosts) // assuming your job posts table is named 'jobPosts'
+          .set({
+            isReviewed: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(jobPosts.id, jobPostId));
+  
+        return deletedReview;
+      });
+  
       return result.length > 0;
     } catch (error) {
       console.error("Error deleting review:", error);
       throw new Error("Failed to delete review");
     }
   }
-
   // Validate review data
   static validateReviewData(
     data: CreateReviewData | UpdateReviewData
