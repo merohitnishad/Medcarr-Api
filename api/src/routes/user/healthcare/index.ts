@@ -44,9 +44,8 @@ router.get('/profile/basic', healthcareOnly, async (req: AuthenticatedRequest, r
 router.get('/profile', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const includeReviews = req.query.includeReviews === 'true';
     
-    const userWithProfile = await HealthcareService.getCompleteProfile(userId, includeReviews);
+    const userWithProfile = await HealthcareService.getCompleteProfile(userId);
     
     if (!userWithProfile) {
       res.status(404).json({ 

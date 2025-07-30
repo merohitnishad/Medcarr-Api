@@ -1,10 +1,13 @@
 // routes/user/healthcare/healthcareService.ts
 import { db } from "../../../db/index.js";
-import { users, healthcareProfiles, healthcareProfileLanguages, healthcareProfileSpecialities, healthcareBankDetails } from "../../../db/schemas/usersSchema.js";
 import {
-  specialities,
-  languages,
-} from "../../../db/schemas/utilsSchema.js";
+  users,
+  healthcareProfiles,
+  healthcareProfileLanguages,
+  healthcareProfileSpecialities,
+  healthcareBankDetails,
+} from "../../../db/schemas/usersSchema.js";
+import { specialities, languages } from "../../../db/schemas/utilsSchema.js";
 import { eq, and, inArray, count } from "drizzle-orm";
 import { S3Service } from "../../../utils/s3UploadService.js";
 import { ReviewService } from "../../review/reviewService.js";
@@ -73,7 +76,7 @@ export interface CreateHealthcareProfileData {
   gender: string;
   professionalTitle: string;
   imageKey?: string;
-  imageUrl?: string;  
+  imageUrl?: string;
   postcode: string;
   phoneNumber: string;
   nationality: string;
@@ -104,7 +107,8 @@ export interface CreateBankDetailsData {
   accountNumber: string;
   bankName?: string;
 }
-export interface PublicHealthcareProfile extends Omit<HealthcareProfile, 'phoneNumber' | 'address' | 'bankDetails'> {
+export interface PublicHealthcareProfile
+  extends Omit<HealthcareProfile, "phoneNumber" | "address" | "bankDetails"> {
   // Optional: Add any public-specific fields
 }
 
@@ -137,8 +141,7 @@ export class HealthcareService {
 
   // Get healthcare user with complete profile using relations
   static async getCompleteProfile(
-    userId: string,
-    includeReviews: boolean = true
+    userId: string
   ): Promise<UserWithProfile | null> {
     try {
       const result = await db.query.users.findFirst({
@@ -185,15 +188,12 @@ export class HealthcareService {
           })),
         };
 
-        // Include review statistics if requested
-        if (includeReviews) {
-          try {
-            const reviewStats = await ReviewService.getReviewStats(userId);
-            transformedProfile.reviewStats = reviewStats;
-          } catch (error) {
-            console.warn("Failed to fetch review stats:", error);
-            // Continue without review stats rather than failing
-          }
+        try {
+          const reviewStats = await ReviewService.getReviewStats(userId);
+          transformedProfile.reviewStats = reviewStats;
+        } catch (error) {
+          console.warn("Failed to fetch review stats:", error);
+          // Continue without review stats rather than failing
         }
 
         return {
@@ -220,7 +220,7 @@ export class HealthcareService {
 
       // Get review statistics
       const reviewStats = await ReviewService.getReviewStats(userId);
-      
+
       return {
         ...userWithProfile,
         healthcareProfile: {
@@ -328,7 +328,7 @@ export class HealthcareService {
             userId,
             ...profileDataWithoutManyToMany,
             dateOfBirth: profileData.dateOfBirth, // Convert string to Date
-            gender: profileData.gender as "male" | "female", 
+            gender: profileData.gender as "male" | "female",
             image: profileData.imageUrl, // Set the uploaded image URL
           })
           .returning();
@@ -395,9 +395,9 @@ export class HealthcareService {
       if (!userWithProfile || !userWithProfile.healthcareProfile) {
         throw new Error("User not found or profile does not exist");
       }
-  
+
       const profileId = userWithProfile.healthcareProfile.id;
-  
+
       // Validate speciality IDs if provided
       if (profileData.specialityIds && profileData.specialityIds.length > 0) {
         const validSpecialities = await this.validateSpecialityIds(
@@ -407,7 +407,7 @@ export class HealthcareService {
           throw new Error("One or more speciality IDs are invalid");
         }
       }
-  
+
       // Validate language IDs if provided
       if (profileData.languageIds && profileData.languageIds.length > 0) {
         const validLanguages = await this.validateLanguageIds(
@@ -417,7 +417,7 @@ export class HealthcareService {
           throw new Error("One or more language IDs are invalid");
         }
       }
-  
+
       // Start transaction
       await db.transaction(async (tx) => {
         // Update the profile (without the many-to-many fields and imageFile)
@@ -427,7 +427,7 @@ export class HealthcareService {
           imageKey,
           ...profileDataWithoutManyToMany
         } = profileData;
-  
+
         const updateData: any = {
           ...profileDataWithoutManyToMany,
           updatedAt: new Date(),
@@ -436,12 +436,12 @@ export class HealthcareService {
         if (profileData.gender) {
           updateData.gender = profileData.gender as "male" | "female";
         }
-  
+
         // Add image URL to update data if provided
         if (profileData.imageUrl) {
           updateData.image = profileData.imageUrl;
         }
-  
+
         if (Object.keys(updateData).length > 1) {
           // More than just updatedAt
           await tx
@@ -449,7 +449,7 @@ export class HealthcareService {
             .set(updateData)
             .where(eq(healthcareProfiles.id, profileId));
         }
-  
+
         // Update speciality associations if provided
         if (specialityIds !== undefined) {
           // Remove existing associations
@@ -458,7 +458,7 @@ export class HealthcareService {
             .where(
               eq(healthcareProfileSpecialities.healthcareProfileId, profileId)
             );
-  
+
           // Add new associations
           if (specialityIds.length > 0) {
             const specialityAssociations = specialityIds.map(
@@ -467,13 +467,13 @@ export class HealthcareService {
                 specialityId,
               })
             );
-  
+
             await tx
               .insert(healthcareProfileSpecialities)
               .values(specialityAssociations);
           }
         }
-  
+
         // Update language associations if provided
         if (languageIds !== undefined) {
           // Remove existing associations
@@ -482,21 +482,21 @@ export class HealthcareService {
             .where(
               eq(healthcareProfileLanguages.healthcareProfileId, profileId)
             );
-  
+
           // Add new associations
           if (languageIds.length > 0) {
             const languageAssociations = languageIds.map((languageId) => ({
               healthcareProfileId: profileId,
               languageId,
             }));
-  
+
             await tx
               .insert(healthcareProfileLanguages)
               .values(languageAssociations);
           }
         }
       });
-  
+
       // Fetch and return the updated profile with relations
       const updatedProfile = await this.getCompleteProfile(userId);
       return updatedProfile?.healthcareProfile!;
@@ -803,321 +803,347 @@ export class HealthcareService {
     return errors;
   }
 
-    // Get bank details (separate method for security)
-    static async getBankDetails(userId: string): Promise<BankDetails | null> {
-      try {
-        const userWithProfile = await this.getCompleteProfile(userId);
-        if (!userWithProfile?.healthcareProfile) {
-          throw new Error("Healthcare profile not found");
-        }
-  
-        const result = await db.query.healthcareBankDetails.findFirst({
-          where: and(
-            eq(healthcareBankDetails.healthcareProfileId, userWithProfile.healthcareProfile.id),
-            eq(healthcareBankDetails.isDeleted, false)
+  // Get bank details (separate method for security)
+  static async getBankDetails(userId: string): Promise<BankDetails | null> {
+    try {
+      const userWithProfile = await this.getCompleteProfile(userId);
+      if (!userWithProfile?.healthcareProfile) {
+        throw new Error("Healthcare profile not found");
+      }
+
+      const result = await db.query.healthcareBankDetails.findFirst({
+        where: and(
+          eq(
+            healthcareBankDetails.healthcareProfileId,
+            userWithProfile.healthcareProfile.id
           ),
-        });
-  
-        return result || null;
-      } catch (error) {
-        console.error("Error fetching bank details:", error);
-        throw new Error("Failed to fetch bank details");
-      }
+          eq(healthcareBankDetails.isDeleted, false)
+        ),
+      });
+
+      return result || null;
+    } catch (error) {
+      console.error("Error fetching bank details:", error);
+      throw new Error("Failed to fetch bank details");
     }
-  
-    // Create bank details
-    static async createBankDetails(
-      userId: string,
-      bankData: CreateBankDetailsData
-    ): Promise<BankDetails> {
-      try {
-        const userWithProfile = await this.getCompleteProfile(userId);
-        if (!userWithProfile?.healthcareProfile) {
-          throw new Error("Healthcare profile not found");
-        }
-  
-        // Check if bank details already exist
-        const existingBankDetails = await this.getBankDetails(userId);
-        if (existingBankDetails) {
-          throw new Error("Bank details already exist. Use update method instead.");
-        }
-  
-        // Validate bank details
-        const validationErrors = this.validateBankDetails(bankData);
-        if (validationErrors.length > 0) {
-          throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
-        }
-  
-        const [createdBankDetails] = await db
-          .insert(healthcareBankDetails)
-          .values({
-            healthcareProfileId: userWithProfile.healthcareProfile.id,
-            ...bankData,
-          })
-          .returning();
-  
-        return createdBankDetails;
-      } catch (error) {
-        console.error("Error creating bank details:", error);
+  }
+
+  // Create bank details
+  static async createBankDetails(
+    userId: string,
+    bankData: CreateBankDetailsData
+  ): Promise<BankDetails> {
+    try {
+      const userWithProfile = await this.getCompleteProfile(userId);
+      if (!userWithProfile?.healthcareProfile) {
+        throw new Error("Healthcare profile not found");
+      }
+
+      // Check if bank details already exist
+      const existingBankDetails = await this.getBankDetails(userId);
+      if (existingBankDetails) {
         throw new Error(
-          error instanceof Error ? error.message : "Failed to create bank details"
+          "Bank details already exist. Use update method instead."
         );
       }
+
+      // Validate bank details
+      const validationErrors = this.validateBankDetails(bankData);
+      if (validationErrors.length > 0) {
+        throw new Error(`Validation failed: ${validationErrors.join(", ")}`);
+      }
+
+      const [createdBankDetails] = await db
+        .insert(healthcareBankDetails)
+        .values({
+          healthcareProfileId: userWithProfile.healthcareProfile.id,
+          ...bankData,
+        })
+        .returning();
+
+      return createdBankDetails;
+    } catch (error) {
+      console.error("Error creating bank details:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to create bank details"
+      );
     }
-  
-    // Update bank details
-    static async updateBankDetails(
-      userId: string,
-      bankData: Partial<CreateBankDetailsData>
-    ): Promise<BankDetails> {
-      try {
-        const existingBankDetails = await this.getBankDetails(userId);
-        if (!existingBankDetails) {
-          throw new Error("Bank details not found");
-        }
-  
-        // Validate bank details
-        const validationErrors = this.validateBankDetails(bankData);
-        if (validationErrors.length > 0) {
-          throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
-        }
-  
-        const [updatedBankDetails] = await db
-          .update(healthcareBankDetails)
-          .set({
-            ...bankData,
-            updatedAt: new Date(),
-          })
-          .where(eq(healthcareBankDetails.id, existingBankDetails.id))
-          .returning();
-  
-        return updatedBankDetails;
-      } catch (error) {
-        console.error("Error updating bank details:", error);
-        throw new Error(
-          error instanceof Error ? error.message : "Failed to update bank details"
-        );
+  }
+
+  // Update bank details
+  static async updateBankDetails(
+    userId: string,
+    bankData: Partial<CreateBankDetailsData>
+  ): Promise<BankDetails> {
+    try {
+      const existingBankDetails = await this.getBankDetails(userId);
+      if (!existingBankDetails) {
+        throw new Error("Bank details not found");
       }
+
+      // Validate bank details
+      const validationErrors = this.validateBankDetails(bankData);
+      if (validationErrors.length > 0) {
+        throw new Error(`Validation failed: ${validationErrors.join(", ")}`);
+      }
+
+      const [updatedBankDetails] = await db
+        .update(healthcareBankDetails)
+        .set({
+          ...bankData,
+          updatedAt: new Date(),
+        })
+        .where(eq(healthcareBankDetails.id, existingBankDetails.id))
+        .returning();
+
+      return updatedBankDetails;
+    } catch (error) {
+      console.error("Error updating bank details:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to update bank details"
+      );
     }
-  
-    // Delete bank details (GDPR compliance)
-    static async deleteBankDetails(userId: string): Promise<boolean> {
-      try {
-        const existingBankDetails = await this.getBankDetails(userId);
-        if (!existingBankDetails) {
-          return false;
-        }
-  
-        await db
-          .update(healthcareBankDetails)
-          .set({
-            isDeleted: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(healthcareBankDetails.id, existingBankDetails.id));
-  
-        return true;
-      } catch (error) {
-        console.error("Error deleting bank details:", error);
-        throw new Error("Failed to delete bank details");
+  }
+
+  // Delete bank details (GDPR compliance)
+  static async deleteBankDetails(userId: string): Promise<boolean> {
+    try {
+      const existingBankDetails = await this.getBankDetails(userId);
+      if (!existingBankDetails) {
+        return false;
       }
+
+      await db
+        .update(healthcareBankDetails)
+        .set({
+          isDeleted: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(healthcareBankDetails.id, existingBankDetails.id));
+
+      return true;
+    } catch (error) {
+      console.error("Error deleting bank details:", error);
+      throw new Error("Failed to delete bank details");
     }
-  
-    // Validate bank details
-    static validateBankDetails(data: Partial<CreateBankDetailsData>): string[] {
-      const errors: string[] = [];
-  
-      if (data.accountName !== undefined) {
-        if (!data.accountName || data.accountName.trim().length < 2) {
-          errors.push("Account name must be at least 2 characters long");
-        }
-      }
-  
-      if (data.sortCode !== undefined) {
-        if (!data.sortCode) {
-          errors.push("Sort code is required");
-        } else {
-          // UK sort code validation (XX-XX-XX format, 6 digits)
-          const sortCodePattern = /^\d{2}-\d{2}-\d{2}$/;
-          const cleanSortCode = data.sortCode.replace(/\D/g, '');
-          
-          if (cleanSortCode.length !== 6) {
-            errors.push("Sort code must be 6 digits");
-          } else if (!sortCodePattern.test(data.sortCode) && data.sortCode.length !== 6) {
-            errors.push("Sort code must be in XX-XX-XX format or 6 digits");
-          }
-        }
-      }
-  
-      if (data.accountNumber !== undefined) {
-        if (!data.accountNumber) {
-          errors.push("Account number is required");
-        } else {
-          // UK account number validation (8 digits)
-          const cleanAccountNumber = data.accountNumber.replace(/\D/g, '');
-          if (cleanAccountNumber.length !== 8) {
-            errors.push("Account number must be exactly 8 digits");
-          }
-        }
-      }
-  
-      if (data.bankName !== undefined && data.bankName) {
-        if (data.bankName.trim().length < 2) {
-          errors.push("Bank name must be at least 2 characters long");
-        }
-      }
-  
-      return errors;
-    }
-  
-    // Update getCompleteProfile to include bank details when specifically requested
-    static async getCompleteProfileWithBankDetails(
-      userId: string
-    ): Promise<UserWithProfile | null> {
-      try {
-        const userWithProfile = await this.getCompleteProfile(userId);
-        if (!userWithProfile?.healthcareProfile) {
-          return userWithProfile;
-        }
-  
-        const bankDetails = await this.getBankDetails(userId);
-        
-        return {
-          ...userWithProfile,
-          healthcareProfile: {
-            ...userWithProfile.healthcareProfile,
-            bankDetails,
-          },
-        };
-      } catch (error) {
-        console.error("Error fetching complete profile with bank details:", error);
-        throw new Error("Failed to fetch complete profile with bank details");
+  }
+
+  // Validate bank details
+  static validateBankDetails(data: Partial<CreateBankDetailsData>): string[] {
+    const errors: string[] = [];
+
+    if (data.accountName !== undefined) {
+      if (!data.accountName || data.accountName.trim().length < 2) {
+        errors.push("Account name must be at least 2 characters long");
       }
     }
 
-    static async getHealthcareProvidersWithReviews(options: {
+    if (data.sortCode !== undefined) {
+      if (!data.sortCode) {
+        errors.push("Sort code is required");
+      } else {
+        // UK sort code validation (XX-XX-XX format, 6 digits)
+        const sortCodePattern = /^\d{2}-\d{2}-\d{2}$/;
+        const cleanSortCode = data.sortCode.replace(/\D/g, "");
+
+        if (cleanSortCode.length !== 6) {
+          errors.push("Sort code must be 6 digits");
+        } else if (
+          !sortCodePattern.test(data.sortCode) &&
+          data.sortCode.length !== 6
+        ) {
+          errors.push("Sort code must be in XX-XX-XX format or 6 digits");
+        }
+      }
+    }
+
+    if (data.accountNumber !== undefined) {
+      if (!data.accountNumber) {
+        errors.push("Account number is required");
+      } else {
+        // UK account number validation (8 digits)
+        const cleanAccountNumber = data.accountNumber.replace(/\D/g, "");
+        if (cleanAccountNumber.length !== 8) {
+          errors.push("Account number must be exactly 8 digits");
+        }
+      }
+    }
+
+    if (data.bankName !== undefined && data.bankName) {
+      if (data.bankName.trim().length < 2) {
+        errors.push("Bank name must be at least 2 characters long");
+      }
+    }
+
+    return errors;
+  }
+
+  // Update getCompleteProfile to include bank details when specifically requested
+  static async getCompleteProfileWithBankDetails(
+    userId: string
+  ): Promise<UserWithProfile | null> {
+    try {
+      const userWithProfile = await this.getCompleteProfile(userId);
+      if (!userWithProfile?.healthcareProfile) {
+        return userWithProfile;
+      }
+
+      const bankDetails = await this.getBankDetails(userId);
+
+      return {
+        ...userWithProfile,
+        healthcareProfile: {
+          ...userWithProfile.healthcareProfile,
+          bankDetails,
+        },
+      };
+    } catch (error) {
+      console.error(
+        "Error fetching complete profile with bank details:",
+        error
+      );
+      throw new Error("Failed to fetch complete profile with bank details");
+    }
+  }
+
+  static async getHealthcareProvidersWithReviews(
+    options: {
       limit?: number;
       offset?: number;
       postcode?: string;
       specialityIds?: string[];
       minRating?: number;
-    } = {}): Promise<{ providers: UserWithProfile[]; total: number }> {
-      try {
-        const { limit = 10, offset = 0, postcode, specialityIds, minRating } = options;
-  
-        // Build where conditions
-        const whereConditions = [
-          eq(users.role, "healthcare"),
-          eq(users.isActive, true),
-          eq(users.isDeleted, false),
-          eq(users.profileCompleted, true),
-        ];
-  
-        if (postcode) {
-          whereConditions.push(eq(healthcareProfiles.postcode, postcode));
-        }
-  
-        // Get healthcare providers
-        let query = db.query.users.findMany({
-          where: and(...whereConditions),
-          with: {
-            healthcareProfile: {
-              with: {
-                specialitiesRelation: {
-                  with: { speciality: true },
-                },
-                languagesRelation: {
-                  with: { language: true },
-                },
+    } = {}
+  ): Promise<{ providers: UserWithProfile[]; total: number }> {
+    try {
+      const {
+        limit = 10,
+        offset = 0,
+        postcode,
+        specialityIds,
+        minRating,
+      } = options;
+
+      // Build where conditions
+      const whereConditions = [
+        eq(users.role, "healthcare"),
+        eq(users.isActive, true),
+        eq(users.isDeleted, false),
+        eq(users.profileCompleted, true),
+      ];
+
+      if (postcode) {
+        whereConditions.push(eq(healthcareProfiles.postcode, postcode));
+      }
+
+      // Get healthcare providers
+      let query = db.query.users.findMany({
+        where: and(...whereConditions),
+        with: {
+          healthcareProfile: {
+            with: {
+              specialitiesRelation: {
+                with: { speciality: true },
+              },
+              languagesRelation: {
+                with: { language: true },
               },
             },
           },
-          limit,
-          offset,
-        });
-  
-        const [providers, totalCount] = await Promise.all([
-          query,
-          db
-            .select({ count: count() })
-            .from(users)
-            .innerJoin(healthcareProfiles, eq(users.id, healthcareProfiles.userId))
-            .where(and(...whereConditions))
-            .then(result => result[0].count)
-        ]);
-  
-        // Transform and add review stats
-        const transformedProviders = await Promise.all(
-          providers.map(async (provider: any) => {
-            if (!provider.healthcareProfile) return provider;
-  
-            const {
-              specialitiesRelation,
-              languagesRelation,
-              image: imageRaw,
-              preferredTime: preferredTimeRaw,
-              experience: experienceRaw,
-              ...restProfile
-            } = provider.healthcareProfile;
-  
-            let reviewStats;
-            try {
-              reviewStats = await ReviewService.getReviewStats(provider.id);
-            } catch (error) {
-              console.warn(`Failed to get review stats for provider ${provider.id}:`, error);
-              reviewStats = {
-                totalReviews: 0,
-                averageRating: 0,
-                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-                categoryAverages: {
-                  professionalism: 0,
-                  punctuality: 0,
-                  qualityOfCare: 0,
-                  communication: 0,
-                },
-                recommendationRate: 0,
-              };
-            }
-  
-            // Filter by minimum rating if specified
-            if (minRating && reviewStats.averageRating < minRating) {
-              return null;
-            }
-  
-            const transformedProfile: HealthcareProfile = {
-              ...restProfile,
-              image: imageRaw ?? undefined,
-              preferredTime: preferredTimeRaw ?? undefined,
-              experience: experienceRaw ?? undefined,
-              specialities: (specialitiesRelation ?? []).map((sp: any) => ({
-                id: sp.speciality.id,
-                name: sp.speciality.name,
-              })),
-              languages: (languagesRelation ?? []).map((lang: any) => ({
-                id: lang.language.id,
-                name: lang.language.name,
-              })),
-              reviewStats,
+        },
+        limit,
+        offset,
+      });
+
+      const [providers, totalCount] = await Promise.all([
+        query,
+        db
+          .select({ count: count() })
+          .from(users)
+          .innerJoin(
+            healthcareProfiles,
+            eq(users.id, healthcareProfiles.userId)
+          )
+          .where(and(...whereConditions))
+          .then((result) => result[0].count),
+      ]);
+
+      // Transform and add review stats
+      const transformedProviders = await Promise.all(
+        providers.map(async (provider: any) => {
+          if (!provider.healthcareProfile) return provider;
+
+          const {
+            specialitiesRelation,
+            languagesRelation,
+            image: imageRaw,
+            preferredTime: preferredTimeRaw,
+            experience: experienceRaw,
+            ...restProfile
+          } = provider.healthcareProfile;
+
+          let reviewStats;
+          try {
+            reviewStats = await ReviewService.getReviewStats(provider.id);
+          } catch (error) {
+            console.warn(
+              `Failed to get review stats for provider ${provider.id}:`,
+              error
+            );
+            reviewStats = {
+              totalReviews: 0,
+              averageRating: 0,
+              ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+              categoryAverages: {
+                professionalism: 0,
+                punctuality: 0,
+                qualityOfCare: 0,
+                communication: 0,
+              },
+              recommendationRate: 0,
             };
-  
-            return {
-              ...provider,
-              healthcareProfile: transformedProfile,
-            };
-          })
-        );
-  
-        // Filter out null results (providers that didn't meet rating criteria)
-        const filteredProviders = transformedProviders.filter(p => p !== null) as UserWithProfile[];
-  
-        return {
-          providers: filteredProviders,
-          total: totalCount
-        };
-      } catch (error) {
-        console.error("Error fetching healthcare providers with reviews:", error);
-        throw new Error("Failed to fetch healthcare providers");
-      }
+          }
+
+          // Filter by minimum rating if specified
+          if (minRating && reviewStats.averageRating < minRating) {
+            return null;
+          }
+
+          const transformedProfile: HealthcareProfile = {
+            ...restProfile,
+            image: imageRaw ?? undefined,
+            preferredTime: preferredTimeRaw ?? undefined,
+            experience: experienceRaw ?? undefined,
+            specialities: (specialitiesRelation ?? []).map((sp: any) => ({
+              id: sp.speciality.id,
+              name: sp.speciality.name,
+            })),
+            languages: (languagesRelation ?? []).map((lang: any) => ({
+              id: lang.language.id,
+              name: lang.language.name,
+            })),
+            reviewStats,
+          };
+
+          return {
+            ...provider,
+            healthcareProfile: transformedProfile,
+          };
+        })
+      );
+
+      // Filter out null results (providers that didn't meet rating criteria)
+      const filteredProviders = transformedProviders.filter(
+        (p) => p !== null
+      ) as UserWithProfile[];
+
+      return {
+        providers: filteredProviders,
+        total: totalCount,
+      };
+    } catch (error) {
+      console.error("Error fetching healthcare providers with reviews:", error);
+      throw new Error("Failed to fetch healthcare providers");
     }
-  
+  }
 }
