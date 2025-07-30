@@ -27,6 +27,7 @@ import {
   notInArray,
   lte,
 } from "drizzle-orm";
+import { reviews } from "../../db/schemas/reviewSchema.js";
 
 export interface CreateJobPostData {
   age: number;
@@ -954,7 +955,14 @@ export class JobPostService {
               }
             }
           }
+        },
+        reviews: {
+          where: and(
+            eq(reviews.reviewerId, userId), // Current user's ID
+            eq(reviews.isDeleted, false)
+          )
         }
+    
       },
       orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
       limit,

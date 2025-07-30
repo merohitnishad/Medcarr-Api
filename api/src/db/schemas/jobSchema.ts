@@ -194,7 +194,6 @@ export const jobPostsRelations = relations(jobPosts, ({ one, many }) => ({
   preferencesRelation: many(jobPostPreferences),
 
   reviews: many(reviews),
-
   completedApplication: many(jobApplications),
 }));
 

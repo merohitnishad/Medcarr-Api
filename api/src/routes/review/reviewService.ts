@@ -12,6 +12,7 @@ import {
 } from "../../db/schemas/usersSchema.js";
 import { jobPosts } from "../../db/schemas/jobSchema.js";
 import { eq, and, desc, asc, avg, count, sql, inArray } from "drizzle-orm";
+import { NotificationService } from "../notification/notificationService.js";
 
 export interface Review {
   id: string;
@@ -167,6 +168,25 @@ export class ReviewService {
           updatedAt: new Date(),
         })
         .where(eq(jobPosts.id, reviewData.jobPostId));
+
+      await NotificationService.createFromTemplate(
+        "REVIEW_RECEIVED",
+        reviewData.healthcareProviderId, // Notify the healthcare provider
+        {
+          rating: reviewData.rating.toString(),
+          jobTitle: jobPost.title,
+          reviewId: createdReview.id,
+        },
+        {
+          jobPostId: reviewData.jobPostId,
+          relatedUserId: reviewerId, // The job poster who left the review
+          metadata: {
+            reviewId: createdReview.id,
+            rating: reviewData.rating,
+          },
+          sendEmail: true, // Send email notification for reviews
+        }
+      );
 
       return await this.getReviewById(createdReview.id);
     } catch (error) {
