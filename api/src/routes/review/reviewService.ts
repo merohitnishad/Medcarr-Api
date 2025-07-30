@@ -565,7 +565,8 @@ export class ReviewService {
         where: and(
           eq(jobPosts.id, jobPostId),
           eq(jobPosts.userId, userId),
-          eq(jobPosts.status, "completed")
+          eq(jobPosts.status, "completed"),
+          eq(jobPosts.isDeleted, false)
         ),
       });
 
@@ -574,7 +575,8 @@ export class ReviewService {
       const existingReview = await db.query.reviews.findFirst({
         where: and(
           eq(reviews.jobPostId, jobPostId),
-          eq(reviews.reviewerId, userId)
+          eq(reviews.reviewerId, userId),
+          eq(reviews.isDeleted, false)
         ),
       });
 
