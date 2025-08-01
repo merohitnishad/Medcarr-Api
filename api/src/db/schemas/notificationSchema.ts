@@ -216,7 +216,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     title: 'New Review Received',
     message: 'You received a {rating}-star review for job "{jobTitle}"',
     priority: 'normal',
-    actionUrl: '/my-reviews/{reviewId}',
+    actionUrl: '/dashboard/profile',
     actionLabel: 'View Review'
   }
 };

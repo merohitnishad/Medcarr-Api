@@ -178,7 +178,7 @@ export class ReviewService {
         {
           rating: reviewData.rating.toString(),
           jobTitle: jobPost.title,
-          reviewId: createdReview.id,
+          // reviewId: createdReview.id,
         },
         {
           jobPostId: reviewData.jobPostId,
