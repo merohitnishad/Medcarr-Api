@@ -308,7 +308,7 @@ router.get('/healthcare/:healthcareProviderId', requireNonAdmin, async (req: Aut
         pagination: {
           page: pageNum,
           limit: limitNum,
-          total: result.total,
+          totalPages: result.total,
           pages: Math.ceil(result.total / limitNum)
         }
       }
