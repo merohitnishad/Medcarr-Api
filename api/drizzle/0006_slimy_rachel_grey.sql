@@ -1,0 +1,1 @@
+ALTER TABLE "notifications" ADD COLUMN "message_count" integer DEFAULT 1;
