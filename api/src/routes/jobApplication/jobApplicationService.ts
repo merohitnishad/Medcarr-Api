@@ -1,7 +1,10 @@
 // services/jobApplicationService.ts
 import { db } from "../../db/index.js";
-import { jobApplications } from "../../db/schemas/jobApplicationSchema.js";
-import { jobPosts } from "../../db/schemas/jobSchema.js";
+import {
+  jobApplicationPreferences,
+  jobApplications,
+} from "../../db/schemas/jobApplicationSchema.js";
+import { jobPosts, jobPostPreferences } from "../../db/schemas/jobSchema.js";
 import { healthcareProfiles, users } from "../../db/schemas/usersSchema.js";
 import { eq, and, desc, count, asc, ne, or, inArray } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
@@ -10,6 +13,7 @@ export interface CreateApplicationData {
   jobPostId: string;
   healthcareUserId: string;
   applicationMessage?: string;
+  preferenceIds?: string[];
 }
 
 export interface UpdateApplicationStatusData {
@@ -64,20 +68,20 @@ export class JobApplicationService {
           },
         },
       });
-  
+
       if (!jobPost) {
         throw new Error("Job post not found or no longer available");
       }
-  
+
       // Check if job date is in the future
       const jobDate = new Date(jobPost.jobDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-  
+
       if (jobDate < today) {
         throw new Error("Cannot apply for past jobs");
       }
-  
+
       // Check if user already applied to this specific job
       const existingApplication = await tx.query.jobApplications.findFirst({
         where: and(
@@ -86,11 +90,11 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         ),
       });
-  
+
       if (existingApplication) {
         throw new Error("You have already applied for this job");
       }
-  
+
       // Check if job already has an accepted application
       const acceptedApplication = await tx.query.jobApplications.findFirst({
         where: and(
@@ -99,11 +103,11 @@ export class JobApplicationService {
           eq(jobApplications.isDeleted, false)
         ),
       });
-  
+
       if (acceptedApplication) {
         throw new Error("This job already has an accepted applicant");
       }
-  
+
       // NEW: Check if user has accepted applications for jobs with overlapping time periods
       const conflictingApplications = await tx.query.jobApplications.findMany({
         where: and(
@@ -113,68 +117,113 @@ export class JobApplicationService {
         ),
         with: {
           jobPost: {
-            columns: { 
-              id: true, 
-              title: true, 
-              jobDate: true, 
-              startTime: true, 
-              endTime: true 
+            columns: {
+              id: true,
+              title: true,
+              jobDate: true,
+              startTime: true,
+              endTime: true,
             },
           },
         },
       });
-  
+
       // Check for time conflicts
       if (conflictingApplications.length > 0) {
         // Helper function to create datetime from date and time strings
         const createDateTime = (date: string | Date, time: string): Date => {
-          const dateStr = date instanceof Date ? date.toISOString().split('T')[0] : String(date);
+          const dateStr =
+            date instanceof Date
+              ? date.toISOString().split("T")[0]
+              : String(date);
           const timeStr = String(time); // time column returns "HH:MM:SS" format
           return new Date(`${dateStr}T${timeStr}`);
         };
-  
-        const currentJobStart = createDateTime(jobPost.jobDate, jobPost.startTime);
+
+        const currentJobStart = createDateTime(
+          jobPost.jobDate,
+          jobPost.startTime
+        );
         const currentJobEnd = createDateTime(jobPost.jobDate, jobPost.endTime);
-  
+
         // Validate current job dates
-        if (isNaN(currentJobStart.getTime()) || isNaN(currentJobEnd.getTime())) {
-          throw new Error('Invalid job date or time format for current job');
+        if (
+          isNaN(currentJobStart.getTime()) ||
+          isNaN(currentJobEnd.getTime())
+        ) {
+          throw new Error("Invalid job date or time format for current job");
         }
-  
+
         for (const conflict of conflictingApplications) {
-          const conflictJobStart = createDateTime(conflict.jobPost.jobDate, conflict.jobPost.startTime);
-          const conflictJobEnd = createDateTime(conflict.jobPost.jobDate, conflict.jobPost.endTime);
-  
+          const conflictJobStart = createDateTime(
+            conflict.jobPost.jobDate,
+            conflict.jobPost.startTime
+          );
+          const conflictJobEnd = createDateTime(
+            conflict.jobPost.jobDate,
+            conflict.jobPost.endTime
+          );
+
           // Validate conflict job dates
-          if (isNaN(conflictJobStart.getTime()) || isNaN(conflictJobEnd.getTime())) {
+          if (
+            isNaN(conflictJobStart.getTime()) ||
+            isNaN(conflictJobEnd.getTime())
+          ) {
             continue; // Skip this conflict check if dates are invalid
           }
-  
+
           // Check if there's any overlap between the time periods
-          const hasOverlap = (
-            currentJobStart < conflictJobEnd && currentJobEnd > conflictJobStart
-          );
-  
+          const hasOverlap =
+            currentJobStart < conflictJobEnd &&
+            currentJobEnd > conflictJobStart;
+
           if (hasOverlap) {
             throw new Error(
               `You have already been assigned for a job on this time period. ` +
-              `Conflicting job: "${conflict.jobPost.title}" on ${conflict.jobPost.jobDate} ` +
-              `from ${conflict.jobPost.startTime} to ${conflict.jobPost.endTime}`
+                `Conflicting job: "${conflict.jobPost.title}" on ${conflict.jobPost.jobDate} ` +
+                `from ${conflict.jobPost.startTime} to ${conflict.jobPost.endTime}`
             );
           }
         }
       }
-  
+
       // Get healthcare user details
       const healthcareUser = await tx.query.users.findFirst({
         where: eq(users.id, data.healthcareUserId),
         columns: { id: true, name: true, email: true, role: true },
       });
-  
+
       if (!healthcareUser || healthcareUser.role !== "healthcare") {
         throw new Error("Invalid healthcare user");
       }
-  
+
+      // NEW: If preferences are provided, validate they exist and are part of the job requirements
+      if (data.preferenceIds && data.preferenceIds.length > 0) {
+        // Get job post preferences to validate against
+        const jobPostPreferencesResult =
+          await tx.query.jobPostPreferences.findMany({
+            where: eq(jobPostPreferences.jobPostId, data.jobPostId),
+            with: {
+              preference: {
+                columns: { id: true, name: true },
+              },
+            },
+          });
+
+        const jobRequiredPreferenceIds = jobPostPreferencesResult.map(
+          (jp) => jp.preferenceId
+        );
+
+        // Check if all provided preferences are valid and part of job requirements
+        const invalidPreferences = data.preferenceIds.filter(
+          (prefId) => !jobRequiredPreferenceIds.includes(prefId)
+        );
+
+        if (invalidPreferences.length > 0) {
+          throw new Error("Some preferences are not required for this job");
+        }
+      }
+
       // Create application
       const [application] = await tx
         .insert(jobApplications)
@@ -185,12 +234,21 @@ export class JobApplicationService {
           status: "pending",
         })
         .returning();
-  
+
       // IMPORTANT: Check if application was created successfully
       if (!application || !application.id) {
         throw new Error("Failed to create application");
       }
-  
+
+      if (data.preferenceIds && data.preferenceIds.length > 0) {
+        const preferenceData = data.preferenceIds.map((preferenceId) => ({
+          jobApplicationId: application.id,
+          preferenceId: preferenceId,
+        }));
+
+        await tx.insert(jobApplicationPreferences).values(preferenceData);
+      }
+
       // Return all the data needed for notification
       return {
         application,
@@ -198,7 +256,7 @@ export class JobApplicationService {
         healthcareUser,
       };
     });
-  
+
     // Step 2: Create notification OUTSIDE the transaction (after commit)
     try {
       // Verify the application exists before creating notification
@@ -206,12 +264,12 @@ export class JobApplicationService {
         where: eq(jobApplications.id, result.application.id),
         columns: { id: true },
       });
-  
+
       if (!verifyApplication) {
         console.error("Application not found after transaction commit!");
         throw new Error("Application verification failed");
       }
-  
+
       await NotificationService.createFromTemplate(
         "JOB_APPLICATION_RECEIVED",
         result.jobPost.userId,
@@ -232,7 +290,7 @@ export class JobApplicationService {
       // Don't fail the application creation if notification fails
       // The application is still valid even if notification fails
     }
-  
+
     return result.application;
   }
 
@@ -252,6 +310,22 @@ export class JobApplicationService {
         eq(jobPosts.userId, userId),
         eq(jobPosts.isDeleted, false)
       ),
+      with: {
+        languagesRelation: {
+          with: {
+            language: {
+              columns: { id: true, name: true }
+            }
+          }
+        },
+        preferencesRelation: {
+          with: {
+            preference: {
+              columns: { id: true, name: true }
+            }
+          }
+        }
+      },
     });
 
     if (!jobPost) {
@@ -289,7 +363,14 @@ export class JobApplicationService {
             type: true,
             jobDate: true,
             postcode: true,
-            status: true // Add postcode to calculate distance
+            status: true, // Add postcode to calculate distance
+          },
+        },
+        preferencesRelation: {
+          with: {
+            preference: {
+              columns: { id: true, name: true },
+            },
           },
         },
       },
@@ -325,9 +406,17 @@ export class JobApplicationService {
         );
       }
 
+      const matchingPercentage = this.calculateMatchingPercentage(
+        jobPost,
+        healthcareProfile,
+        application.preferencesRelation || []
+      );
+      
+
       // Transform the data
       const transformedApplication = {
         ...application,
+        matchingPercentage: matchingPercentage,
         healthcareUser: {
           ...application.healthcareUser,
           healthcareProfile: healthcareProfile
@@ -418,6 +507,13 @@ export class JobApplicationService {
             },
           },
         },
+        preferencesRelation: {
+          with: {
+            preference: {
+              columns: { id: true, name: true },
+            },
+          },
+        },
       },
       orderBy: [desc(jobApplications.createdAt)],
       limit,
@@ -464,26 +560,28 @@ export class JobApplicationService {
           },
         },
       });
-  
+
       if (!application) {
         throw new Error("Application not found");
       }
-  
+
       // Verify job ownership
       if (application.jobPost.userId !== userId) {
         throw new Error("Access denied");
       }
-  
+
       // Check if job post is already approved
       if (application.jobPost.status === "approved") {
-        throw new Error("Job post has already been approved and cannot be modified");
+        throw new Error(
+          "Job post has already been approved and cannot be modified"
+        );
       }
-  
+
       // Check if application is still pending
       if (application.status !== "pending") {
         throw new Error("Application has already been processed");
       }
-  
+
       // Update the application
       const [updatedApplication] = await tx
         .update(jobApplications)
@@ -495,7 +593,7 @@ export class JobApplicationService {
         })
         .where(eq(jobApplications.id, applicationId))
         .returning();
-  
+
       // Only process acceptance logic if the application was accepted
       if (data.status === "accepted") {
         // Update job post status
@@ -506,7 +604,7 @@ export class JobApplicationService {
             updatedAt: new Date(),
           })
           .where(eq(jobPosts.id, application.jobPostId));
-  
+
         // Find all other applications by the same healthcare user that are pending or accepted
         const conflictingApplications = await tx.query.jobApplications.findMany(
           {
@@ -532,7 +630,7 @@ export class JobApplicationService {
             },
           }
         );
-  
+
         // Get current job timing for comparison
         const currentJob = application.jobPost;
         const currentStartDateTime = new Date(
@@ -545,11 +643,11 @@ export class JobApplicationService {
             currentJob.endTime
           }`
         );
-  
+
         // Filter applications that have time conflicts
         const conflictingIds: string[] = [];
         const conflictingJobTitles: string[] = [];
-  
+
         conflictingApplications.forEach((conflictApp) => {
           const conflictJob = conflictApp.jobPost;
           const conflictStartDateTime = new Date(
@@ -562,18 +660,18 @@ export class JobApplicationService {
               conflictJob.endTime
             }`
           );
-  
+
           // Check for time overlap
           const hasTimeConflict =
             currentStartDateTime < conflictEndDateTime &&
             currentEndDateTime > conflictStartDateTime;
-  
+
           if (hasTimeConflict) {
             conflictingIds.push(conflictApp.id);
             conflictingJobTitles.push(conflictJob.title);
           }
         });
-  
+
         // Update conflicting applications to 'not-available'
         if (conflictingIds.length > 0) {
           await tx
@@ -587,7 +685,7 @@ export class JobApplicationService {
             .where(inArray(jobApplications.id, conflictingIds));
         }
       }
-  
+
       // Create notification for healthcare worker about the main application
       const templateKey =
         data.status === "accepted"
@@ -608,7 +706,7 @@ export class JobApplicationService {
           sendEmail: true,
         }
       );
-  
+
       return updatedApplication;
     });
   }
@@ -681,13 +779,13 @@ export class JobApplicationService {
 
         // Only reopen if there are pending applications waiting
         // if (pendingApplications.length > 0) {
-          await tx
-            .update(jobPosts)
-            .set({
-              status: "open",
-              updatedAt: new Date(),
-            })
-            .where(eq(jobPosts.id, application.jobPostId));
+        await tx
+          .update(jobPosts)
+          .set({
+            status: "open",
+            updatedAt: new Date(),
+          })
+          .where(eq(jobPosts.id, application.jobPostId));
         // }
       }
 
@@ -1049,6 +1147,13 @@ export class JobApplicationService {
         completedByUser: {
           columns: { id: true, name: true, role: true },
         },
+        preferencesRelation: {
+          with: {
+            preference: {
+              columns: { id: true, name: true },
+            },
+          },
+        },
       },
     });
 
@@ -1131,7 +1236,7 @@ export class JobApplicationService {
             jobDate: true,
             startTime: true,
             endTime: true,
-            status: true
+            status: true,
           },
         },
       },
@@ -1287,6 +1392,39 @@ export class JobApplicationService {
     }
   }
 
+  // 4. Add this new method to get job post with preferences (for healthcare workers viewing job details)
+  static async getJobPostWithPreferences(jobPostId: string) {
+    return await db.query.jobPosts.findFirst({
+      where: and(eq(jobPosts.id, jobPostId), eq(jobPosts.isDeleted, false)),
+      with: {
+        preferencesRelation: {
+          with: {
+            preference: {
+              columns: { id: true, name: true },
+            },
+          },
+        },
+        careNeedsRelation: {
+          with: {
+            careNeed: {
+              columns: { id: true, name: true },
+            },
+          },
+        },
+        languagesRelation: {
+          with: {
+            language: {
+              columns: { id: true, name: true },
+            },
+          },
+        },
+        user: {
+          columns: { id: true, name: true },
+        },
+      },
+    });
+  }
+
   private static async calculateDistanceWithUnits(
     postcode1: string,
     postcode2: string
@@ -1379,5 +1517,67 @@ export class JobApplicationService {
 
   private static toRadians(degrees: number): number {
     return degrees * (Math.PI / 180);
+  }
+
+  // 1. Add this method to calculate matching percentage
+  private static calculateMatchingPercentage(
+    jobPost: any,
+    healthcareProfile: any,
+    applicationPreferences: any[]
+  ): number {
+    let totalCriteria = 0;
+    let matchedCriteria = 0;
+
+    // 1. Gender matching (weight: 1)
+    totalCriteria += 1;
+    if (
+      jobPost.caregiverGender === "male-or-female" ||
+      jobPost.caregiverGender === "other" ||
+      jobPost.caregiverGender === healthcareProfile.gender
+    ) {
+      matchedCriteria += 1;
+    }
+
+    // 2. Languages matching (weight: 1)
+    totalCriteria += 1;
+    const jobLanguageIds =
+      jobPost.languagesRelation?.map((rel: any) => rel.languageId) || [];
+    const healthcareLanguageIds =
+      healthcareProfile.languagesRelation?.map((rel: any) => rel.languageId) ||
+      [];
+
+    if (jobLanguageIds.length === 0) {
+      // No language requirement, consider as match
+      matchedCriteria += 1;
+    } else {
+      const languageMatches = jobLanguageIds.filter((langId: string) =>
+        healthcareLanguageIds.includes(langId)
+      ).length;
+      if (languageMatches > 0) {
+        matchedCriteria += languageMatches / jobLanguageIds.length;
+      }
+    }
+
+    // 3. Preferences matching (weight: 1)
+    totalCriteria += 1;
+    const jobPreferenceIds =
+      jobPost.preferencesRelation?.map((rel: any) => rel.preferenceId) || [];
+    const applicationPreferenceIds = applicationPreferences.map(
+      (pref: any) => pref.preferenceId
+    );
+
+    if (jobPreferenceIds.length === 0) {
+      // No preference requirement, consider as match
+      matchedCriteria += 1;
+    } else {
+      const preferenceMatches = jobPreferenceIds.filter((prefId: string) =>
+        applicationPreferenceIds.includes(prefId)
+      ).length;
+      if (preferenceMatches > 0) {
+        matchedCriteria += preferenceMatches / jobPreferenceIds.length;
+      }
+    }
+
+    return Math.round((matchedCriteria / totalCriteria) * 100);
   }
 }

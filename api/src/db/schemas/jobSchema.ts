@@ -41,6 +41,8 @@ export const relationshipEnum = pgEnum("relationship", [
 export const caregiverGenderEnum = pgEnum("caregiver_gender", [
   "male",
   "female",
+  "male-or-female",
+  "others",
 ]);
 export const jobStatus = pgEnum("job_status", [
   "open",

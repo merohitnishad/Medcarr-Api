@@ -1,0 +1,1 @@
+ALTER TYPE "caregiver_gender" ADD VALUE 'others';

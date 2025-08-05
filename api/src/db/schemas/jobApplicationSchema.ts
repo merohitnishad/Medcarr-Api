@@ -14,6 +14,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { jobPosts } from "./jobSchema";
 import { users } from "./usersSchema";
 import { conversations } from "./messageSchema";
+import { preferences } from "./utilsSchema";
 
 // Enums for job application
 export const applicationStatusEnum = pgEnum("application_status", [
@@ -94,8 +95,37 @@ export const jobApplications = pgTable(
   })
 );
 
+// New Junction Table for Job Application Preferences
+export const jobApplicationPreferences = pgTable(
+  "job_application_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobApplicationId: uuid("job_application_id")
+      .notNull()
+      .references(() => jobApplications.id, { onDelete: "cascade" }),
+    preferenceId: uuid("preference_id")
+      .notNull()
+      .references(() => preferences.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    jobApplicationIdIdx: index("job_application_preferences_application_id_idx").on(
+      table.jobApplicationId
+    ),
+    preferenceIdIdx: index("job_application_preferences_preference_id_idx").on(
+      table.preferenceId
+    ),
+    // Unique constraint to prevent duplicate entries
+    uniqueJobApplicationPreference: index("unique_job_application_preference").on(
+      table.jobApplicationId,
+      table.preferenceId
+    ),
+  })
+);
+
+
 // Relations for job applications (DON'T override existing relations)
-export const jobApplicationsRelations = relations(jobApplications, ({ one }) => ({
+export const jobApplicationsRelations = relations(jobApplications, ({ one, many }) => ({
   jobPost: one(jobPosts, {
     fields: [jobApplications.jobPostId],
     references: [jobPosts.id],
@@ -124,7 +154,22 @@ export const jobApplicationsRelations = relations(jobApplications, ({ one }) => 
     fields: [jobApplications.id],
     references: [conversations.jobApplicationId],
   }),
+  preferencesRelation: many(jobApplicationPreferences),
+
 }));
+
+// New relation for the junction table
+export const jobApplicationPreferencesRelations = relations(jobApplicationPreferences, ({ one }) => ({
+  jobApplication: one(jobApplications, {
+    fields: [jobApplicationPreferences.jobApplicationId],
+    references: [jobApplications.id],
+  }),
+  preference: one(preferences, {
+    fields: [jobApplicationPreferences.preferenceId],
+    references: [preferences.id],
+  }),
+}));
+
 
 // Zod Schemas for validation
 export const createJobApplicationSchema = createInsertSchema(jobApplications).omit({
@@ -151,6 +196,13 @@ export const createJobApplicationSchema = createInsertSchema(jobApplications).om
   isDeleted: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const createJobApplicationPreferenceSchema = createInsertSchema(
+  jobApplicationPreferences
+).omit({
+  id: true,
+  createdAt: true,
 });
 
 export const updateApplicationStatusSchema = createInsertSchema(jobApplications).pick({
