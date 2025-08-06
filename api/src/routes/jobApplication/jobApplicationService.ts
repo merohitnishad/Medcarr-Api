@@ -8,6 +8,7 @@ import { jobPosts, jobPostPreferences } from "../../db/schemas/jobSchema.js";
 import { healthcareProfiles, users } from "../../db/schemas/usersSchema.js";
 import { eq, and, desc, count, asc, ne, or, inArray } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
+import { ReviewService } from "../review/reviewService.js";
 
 export interface CreateApplicationData {
   jobPostId: string;
@@ -412,6 +413,13 @@ export class JobApplicationService {
         application.preferencesRelation || []
       );
       
+      let reviewStats = null;
+      try {
+        reviewStats = await ReviewService.getReviewStats(application.healthcareUser.id);
+      } catch (error) {
+        console.warn("Failed to fetch review stats for user:", application.healthcareUser.id, error);
+        // Continue without review stats rather than failing
+      }
 
       // Transform the data
       const transformedApplication = {
@@ -439,6 +447,7 @@ export class JobApplicationService {
                     (rel) => rel.language
                   ) || [],
                 distance: distance,
+                reviewStats: reviewStats, // ADD THIS LINE
               }
             : null,
         },
