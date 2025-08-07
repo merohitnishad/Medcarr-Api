@@ -1046,6 +1046,20 @@ export class JobApplicationService {
         })
         .where(eq(jobPosts.id, application.jobPostId));
 
+      await tx.query.jobApplications.findMany({
+        where: and(
+          eq(jobApplications.jobPostId, application.jobPostId),
+          ne(jobApplications.id, applicationId),
+          eq(jobApplications.status, "closed"),
+          eq(jobApplications.isDeleted, false)
+        ),
+        with: {
+          healthcareUser: {
+            columns: { id: true, name: true },
+          },
+        },
+      });
+
       // Notify healthcare worker
       await NotificationService.createFromTemplate(
         "JOB_COMPLETED",
@@ -1062,6 +1076,22 @@ export class JobApplicationService {
         }
       );
 
+      // for (const closedApp of closedApplications) {
+      //   await NotificationService.createFromTemplate(
+      //     "JOB_CLOSED",
+      //     closedApp.healthcareUserId,
+      //     {
+      //       jobTitle: application.jobPost.title,
+      //       reason: "Job has been completed by another healthcare worker",
+      //     },
+      //     {
+      //       jobPostId: application.jobPostId,
+      //       jobApplicationId: closedApp.id,
+      //       relatedUserId: userId,
+      //       sendEmail: false, // You can set this to true if you want email notifications
+      //     }
+      //   );
+      // }
       return updatedApplication;
     });
   }
