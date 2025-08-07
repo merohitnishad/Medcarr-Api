@@ -1046,19 +1046,34 @@ export class JobApplicationService {
         })
         .where(eq(jobPosts.id, application.jobPostId));
 
-      await tx.query.jobApplications.findMany({
-        where: and(
-          eq(jobApplications.jobPostId, application.jobPostId),
-          ne(jobApplications.id, applicationId),
-          eq(jobApplications.status, "closed"),
-          eq(jobApplications.isDeleted, false)
-        ),
-        with: {
-          healthcareUser: {
-            columns: { id: true, name: true },
-          },
-        },
-      });
+      await tx
+        .update(jobApplications)
+        .set({
+          status: "closed",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(jobApplications.jobPostId, application.jobPostId),
+            ne(jobApplications.id, applicationId),
+            eq(jobApplications.status, "pending"),
+            eq(jobApplications.isDeleted, false)
+          )
+        );
+
+      // await tx.query.jobApplications.findMany({
+      //   where: and(
+      //     eq(jobApplications.jobPostId, application.jobPostId),
+      //     ne(jobApplications.id, applicationId),
+      //     eq(jobApplications.status, "closed"),
+      //     eq(jobApplications.isDeleted, false)
+      //   ),
+      //   with: {
+      //     healthcareUser: {
+      //       columns: { id: true, name: true },
+      //     },
+      //   },
+      // });
 
       // Notify healthcare worker
       await NotificationService.createFromTemplate(

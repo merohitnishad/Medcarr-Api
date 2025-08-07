@@ -3,11 +3,13 @@ import { Pool } from "pg";
 import "dotenv/config";
 import * as schema from "../db/schemas/utilsSchema.js";
 import { eq } from "drizzle-orm/expressions.js";
-import { db } from "./index.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is not set");
 }
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool, { schema });
 
 
 const updatedPreferencesData = [
