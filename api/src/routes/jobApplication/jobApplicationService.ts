@@ -315,17 +315,17 @@ export class JobApplicationService {
         languagesRelation: {
           with: {
             language: {
-              columns: { id: true, name: true }
-            }
-          }
+              columns: { id: true, name: true },
+            },
+          },
         },
         preferencesRelation: {
           with: {
             preference: {
-              columns: { id: true, name: true }
-            }
-          }
-        }
+              columns: { id: true, name: true },
+            },
+          },
+        },
       },
     });
 
@@ -376,8 +376,6 @@ export class JobApplicationService {
         },
       },
       orderBy: [desc(jobApplications.createdAt)],
-      limit,
-      offset,
     });
 
     // Get healthcare profile data separately for each application
@@ -412,12 +410,18 @@ export class JobApplicationService {
         healthcareProfile,
         application.preferencesRelation || []
       );
-      
+
       let reviewStats = null;
       try {
-        reviewStats = await ReviewService.getReviewStats(application.healthcareUser.id);
+        reviewStats = await ReviewService.getReviewStats(
+          application.healthcareUser.id
+        );
       } catch (error) {
-        console.warn("Failed to fetch review stats for user:", application.healthcareUser.id, error);
+        console.warn(
+          "Failed to fetch review stats for user:",
+          application.healthcareUser.id,
+          error
+        );
         // Continue without review stats rather than failing
       }
 
@@ -456,8 +460,19 @@ export class JobApplicationService {
       resultsWithDistance.push(transformedApplication);
     }
 
+    // Sort by matching percentage (highest to lowest)
+    resultsWithDistance.sort((a, b) => {
+      // Handle cases where matchingPercentage might be undefined or null
+      const aPercentage = a.matchingPercentage || 0;
+      const bPercentage = b.matchingPercentage || 0;
+      return bPercentage - aPercentage; // Descending order (highest first)
+    });
+
+    // Apply pagination after sorting
+    const paginatedResults = resultsWithDistance.slice(offset, offset + limit);
+
     return {
-      data: resultsWithDistance,
+      data: paginatedResults,
       pagination: {
         page,
         limit,
