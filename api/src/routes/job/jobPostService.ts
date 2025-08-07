@@ -919,6 +919,69 @@ export class JobPostService {
     };
   }
 
+  static async getUserClosedJobPosts(
+    userId: string,
+    filters: JobPostFilters = {}
+  ) {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (page - 1) * limit;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of today
+
+    const conditions = [
+      eq(jobPosts.userId, userId),
+      eq(jobPosts.isDeleted, false),
+      notInArray(jobPosts.status, ["open", "approved", "completed"]), // Status not in ['open', 'approved']
+    ];
+
+    const [totalCount] = await db
+      .select({ count: count() })
+      .from(jobPosts)
+      .where(and(...conditions));
+
+    const results = await db.query.jobPosts.findMany({
+      where: and(...conditions),
+      with: {
+        careNeedsRelation: { with: { careNeed: true } },
+        languagesRelation: { with: { language: true } },
+        preferencesRelation: { with: { preference: true } },
+        completedApplication: {
+          where: eq(jobApplications.status, "completed"),
+          with: {
+            healthcareUser: {
+              with: {
+                healthcareProfile: true
+              }
+            }
+          }
+        },
+        reviews: {
+          where: and(
+            eq(reviews.reviewerId, userId), // Current user's ID
+            eq(reviews.isDeleted, false)
+          )
+        }
+    
+      },
+      orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
+      limit,
+      offset,
+    });
+
+    return {
+      data: results,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / limit),
+        hasNext: page < Math.ceil(totalCount.count / limit),
+        hasPrev: page > 1,
+      },
+    };
+  }
+
   static async getUserPastJobPosts(
     userId: string,
     filters: JobPostFilters = {}
@@ -932,7 +995,7 @@ export class JobPostService {
     const conditions = [
       eq(jobPosts.userId, userId),
       eq(jobPosts.isDeleted, false),
-      notInArray(jobPosts.status, ["open", "approved"]), // Status not in ['open', 'approved']
+      notInArray(jobPosts.status, ["open", "approved", "closed"]), // Status not in ['open', 'approved']
     ];
 
     const [totalCount] = await db
