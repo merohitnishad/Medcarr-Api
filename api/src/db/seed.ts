@@ -8,6 +8,7 @@ import {
   specialitiesData,
   preferencesData
 } from "../db/seeders/utils";
+import { eq } from "drizzle-orm/expressions.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is not set");
@@ -67,5 +68,6 @@ const main = async () => {
     console.log("🔌 Database connection closed");
   }
 };
+
 
 main();
