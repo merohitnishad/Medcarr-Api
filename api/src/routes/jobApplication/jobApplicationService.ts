@@ -49,6 +49,14 @@ export interface ApplicationFilters {
   limit?: number;
   status?: string;
   jobPostId?: string;
+  includeReviews?: boolean;
+  reviewLimit?: number;
+  reviewOffset?: number;
+}
+export interface ReviewOptions {
+  includeReviews?: boolean;
+  reviewLimit?: number;
+  reviewOffset?: number;
 }
 
 export class JobApplicationService {
@@ -301,7 +309,14 @@ export class JobApplicationService {
     userId: string,
     filters: ApplicationFilters = {}
   ) {
-    const { page = 1, limit = 10, status } = filters;
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      includeReviews = false,
+      reviewLimit = 5,
+      reviewOffset = 0,
+    } = filters;
     const offset = (page - 1) * limit;
 
     // Verify job ownership
@@ -412,10 +427,28 @@ export class JobApplicationService {
       );
 
       let reviewStats = null;
+      let recentReviews = null;
       try {
         reviewStats = await ReviewService.getReviewStats(
           application.healthcareUser.id
         );
+
+        if (includeReviews) {
+          const reviewsData = await ReviewService.getHealthcareProviderReviews(
+            application.healthcareUser.id,
+            {
+              limit: reviewLimit,
+              offset: reviewOffset,
+              includePrivate: false, // Only public reviews
+              currentUserId: userId
+            }
+          );
+          recentReviews = {
+            reviews: reviewsData.reviews,
+            total: reviewsData.total,
+            hasMore: reviewsData.total > (reviewOffset + reviewLimit)
+          };
+        }
       } catch (error) {
         console.warn(
           "Failed to fetch review stats for user:",
@@ -452,6 +485,7 @@ export class JobApplicationService {
                   ) || [],
                 distance: distance,
                 reviewStats: reviewStats, // ADD THIS LINE
+                ...(includeReviews && { recentReviews: recentReviews })
               }
             : null,
         },
