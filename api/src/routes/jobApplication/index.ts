@@ -10,7 +10,6 @@ import {
   CheckinData,
   CheckoutData,
   CompleteJobData,
-  ReportData,
   ApplicationFilters 
 } from './jobApplicationService.js';
 
@@ -437,41 +436,41 @@ router.patch('/:applicationId/cancel',requireNonAdmin, async (req: Authenticated
 });
 
 // Report user (Both user types)
-router.post('/:applicationId/report', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { applicationId } = req.params;
-    const reportedBy = req.user!.id;
-    const reportData: ReportData = req.body;
+// router.post('/:applicationId/report', requireNonAdmin, async (req: AuthenticatedRequest, res: Response) => {
+//   try {
+//     const { applicationId } = req.params;
+//     const reportedBy = req.user!.id;
+//     const reportData: ReportData = req.body;
 
-    // Validate required fields
-    if (!reportData.reportReason || !reportData.reportMessage) {
-      res.status(400).json({
-        success: false,
-        error: 'Report reason and message are required'
-      });
-      return;
-    }
+//     // Validate required fields
+//     if (!reportData.reportReason || !reportData.reportMessage) {
+//       res.status(400).json({
+//         success: false,
+//         error: 'Report reason and message are required'
+//       });
+//       return;
+//     }
 
-    const updatedApplication = await JobApplicationService.reportUser(
-      applicationId,
-      reportedBy,
-      reportData
-    );
+//     const updatedApplication = await JobApplicationService.reportUser(
+//       applicationId,
+//       reportedBy,
+//       reportData
+//     );
 
-    res.json({
-      success: true,
-      message: 'Report submitted successfully',
-      data: updatedApplication
-    });
-    return;
-  } catch (error) {
-    console.error('Error in report route:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to submit report'
-    });
-    return;
-  }
-});
+//     res.json({
+//       success: true,
+//       message: 'Report submitted successfully',
+//       data: updatedApplication
+//     });
+//     return;
+//   } catch (error) {
+//     console.error('Error in report route:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error instanceof Error ? error.message : 'Failed to submit report'
+//     });
+//     return;
+//   }
+// });
 
 export default router;
