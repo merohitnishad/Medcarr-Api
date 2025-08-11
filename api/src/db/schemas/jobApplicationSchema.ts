@@ -71,12 +71,6 @@ export const jobApplications = pgTable(
     completedBy: uuid("completed_by").references(() => users.id), // Job poster marks as complete
     completionNotes: text("completion_notes"),
     
-    // Report data
-    reportedAt: timestamp("reported_at", { withTimezone: true }),
-    reportReason: text("report_reason"),
-    reportMessage: text("report_message"),
-    reportedBy: uuid("reported_by").references(() => users.id),
-    
     isActive: boolean("is_active").default(true).notNull(),
     isDeleted: boolean("is_deleted").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -145,11 +139,6 @@ export const jobApplicationsRelations = relations(jobApplications, ({ one, many 
     references: [users.id],
     relationName: "completedApplications"
   }),
-  reportedByUser: one(users, {
-    fields: [jobApplications.reportedBy],
-    references: [users.id],
-    relationName: "reportedApplications"
-  }),
   conversation: one(conversations, {
     fields: [jobApplications.id],
     references: [conversations.jobApplicationId],
@@ -188,10 +177,6 @@ export const createJobApplicationSchema = createInsertSchema(jobApplications).om
   completedAt: true,
   completedBy: true,
   completionNotes: true,
-  reportedAt: true,
-  reportReason: true,
-  reportMessage: true,
-  reportedBy: true,
   isActive: true,
   isDeleted: true,
   createdAt: true,
@@ -225,9 +210,4 @@ export const checkoutSchema = createInsertSchema(jobApplications).pick({
 
 export const completeJobSchema = createInsertSchema(jobApplications).pick({
   completionNotes: true,
-});
-
-export const reportSchema = createInsertSchema(jobApplications).pick({
-  reportReason: true,
-  reportMessage: true,
 });

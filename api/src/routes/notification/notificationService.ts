@@ -25,7 +25,8 @@ export interface CreateNotificationData {
   scheduledFor?: Date;
   expiresAt?: Date;
   sendEmail?: boolean;
-  messageCount?: number; // For message notifications, to track count of messages
+  messageCount?: number;
+  disputeId?: string; // For message notifications, to track count of messages
 }
 
 export interface NotificationFilters {
@@ -65,6 +66,7 @@ export class NotificationService {
         jobPostId: data.jobPostId,
         jobApplicationId: data.jobApplicationId,
         relatedUserId: data.relatedUserId,
+        disputeId: data.disputeId,
         metadata: data.metadata,
         actionUrl: data.actionUrl || template?.actionUrl,
         actionLabel: data.actionLabel || template?.actionLabel,
@@ -178,17 +180,20 @@ export class NotificationService {
     const conversationId = additionalData.metadata?.conversationId;
     const jobPostId = additionalData.jobPostId;
     const senderId = additionalData.relatedUserId; // The person sending the message
-  
+
     // CHANGE 2: Check if recipient is online and active in conversation
     const socketManager = global.socketManager;
     const isRecipientOnline = socketManager?.isUserOnline(userId);
-    const isRecipientInConversation = socketManager?.isUserInConversation(userId, conversationId);
-  
+    const isRecipientInConversation = socketManager?.isUserInConversation(
+      userId,
+      conversationId
+    );
+
     // CHANGE 3: If user is online and in the conversation, don't create/update notification
     if (isRecipientOnline && isRecipientInConversation) {
       return null; // Don't create notification
     }
-  
+
     // Build where conditions dynamically
     const whereConditions = [
       eq(notifications.userId, userId),
@@ -197,41 +202,41 @@ export class NotificationService {
       eq(notifications.isActive, true),
       eq(notifications.isDeleted, false),
     ];
-  
+
     if (jobPostId) {
       whereConditions.push(eq(notifications.jobPostId, jobPostId));
     }
-  
+
     // Look for existing unread message notification for this conversation
     const existingNotification = await db.query.notifications.findFirst({
       where: and(...whereConditions),
       orderBy: [desc(notifications.createdAt)],
     });
-  
+
     // Check if existing notification matches this conversation
     const existingMetadata = existingNotification?.metadata as any;
     const matchingNotification =
       existingMetadata?.conversationId === conversationId
         ? existingNotification
         : null;
-  
+
     if (matchingNotification) {
       // CHANGE 4: Add time check - don't update if last update was very recent (< 30 seconds)
       const lastUpdated = new Date(matchingNotification.updatedAt).getTime();
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdated;
-      
+
       // If updated within last 30 seconds, don't update again
       if (timeSinceLastUpdate < 30000) {
         return matchingNotification;
       }
-  
+
       // Update existing notification
       const currentMetadata = (matchingNotification.metadata as any) || {};
       const newCount = (matchingNotification.messageCount || 1) + 1;
       const senderName = replacements.senderName || "Someone";
       const messagePreview = replacements.messagePreview || "";
-  
+
       const [updatedNotification] = await db
         .update(notifications)
         .set({
@@ -251,7 +256,7 @@ export class NotificationService {
         })
         .where(eq(notifications.id, matchingNotification.id))
         .returning();
-  
+
       // CHANGE 5: Only send socket update if user is online but NOT in conversation
       if (socketManager && isRecipientOnline && !isRecipientInConversation) {
         const fullNotification = await db.query.notifications.findFirst({
@@ -262,21 +267,21 @@ export class NotificationService {
             jobApplication: { columns: { id: true, status: true } },
           },
         });
-  
+
         if (fullNotification) {
           socketManager.sendNotificationToUser(userId, fullNotification);
           const unreadCount = await this.getUnreadCount(userId);
           socketManager.sendNotificationCountUpdate(userId, unreadCount);
         }
       }
-  
+
       return updatedNotification;
     } else {
       // Create new notification only if user is not actively in conversation
       let title = template.title;
       let message = template.message;
       let actionUrl = template.actionUrl;
-  
+
       Object.entries(replacements).forEach(([key, value]) => {
         const placeholder = `{${key}}`;
         title = title.replace(new RegExp(placeholder, "g"), value);
@@ -285,7 +290,7 @@ export class NotificationService {
           actionUrl = actionUrl.replace(new RegExp(placeholder, "g"), value);
         }
       });
-  
+
       return await this.createNotification({
         userId,
         type: template.type,
@@ -354,6 +359,14 @@ export class NotificationService {
           columns: {
             id: true,
             status: true,
+          },
+        },
+        dispute: {
+          columns: {
+            id: true,
+            disputeNumber: true,
+            status: true,
+            title: true,
           },
         },
       },
@@ -613,5 +626,37 @@ export class NotificationService {
       .returning();
 
     return deletedNotifications.length;
+  }
+
+  static async getDisputeNotifications(
+    disputeId: string,
+    userRole: string,
+    userId?: string
+  ) {
+    const conditions = [
+      eq(notifications.disputeId, disputeId),
+      eq(notifications.isDeleted, false),
+    ];
+
+    // If not admin, only show notifications for the specific user
+    if (userRole !== "admin" && userId) {
+      conditions.push(eq(notifications.userId, userId));
+    }
+
+    return await db.query.notifications.findMany({
+      where: and(...conditions),
+      with: {
+        user: {
+          columns: { id: true, name: true, role: true },
+        },
+        relatedUser: {
+          columns: { id: true, name: true, role: true },
+        },
+        dispute: {
+          columns: { id: true, disputeNumber: true, status: true, title: true },
+        },
+      },
+      orderBy: [desc(notifications.createdAt)],
+    });
   }
 }

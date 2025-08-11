@@ -39,10 +39,10 @@ export interface CompleteJobData {
   completionNotes?: string;
 }
 
-export interface ReportData {
-  reportReason: string;
-  reportMessage: string;
-}
+// export interface ReportData {
+//   reportReason: string;
+//   reportMessage: string;
+// }
 
 export interface ApplicationFilters {
   page?: number;
@@ -1146,75 +1146,75 @@ export class JobApplicationService {
   }
 
   // Report healthcare worker or job poster
-  static async reportUser(
-    applicationId: string,
-    reportedBy: string,
-    data: ReportData
-  ) {
-    const application = await db.query.jobApplications.findFirst({
-      where: and(
-        eq(jobApplications.id, applicationId),
-        eq(jobApplications.isDeleted, false)
-      ),
-      with: {
-        jobPost: {
-          with: {
-            user: { columns: { id: true, name: true } },
-          },
-        },
-        healthcareUser: {
-          columns: { id: true, name: true },
-        },
-      },
-    });
+  // static async reportUser(
+  //   applicationId: string,
+  //   reportedBy: string,
+  //   data: ReportData
+  // ) {
+  //   const application = await db.query.jobApplications.findFirst({
+  //     where: and(
+  //       eq(jobApplications.id, applicationId),
+  //       eq(jobApplications.isDeleted, false)
+  //     ),
+  //     with: {
+  //       jobPost: {
+  //         with: {
+  //           user: { columns: { id: true, name: true } },
+  //         },
+  //       },
+  //       healthcareUser: {
+  //         columns: { id: true, name: true },
+  //       },
+  //     },
+  //   });
 
-    if (!application) {
-      throw new Error("Application not found");
-    }
+  //   if (!application) {
+  //     throw new Error("Application not found");
+  //   }
 
-    // Check if user is involved in this application
-    const isHealthcareWorker = application.healthcareUserId === reportedBy;
-    const isJobPoster = application.jobPost.userId === reportedBy;
+  //   // Check if user is involved in this application
+  //   const isHealthcareWorker = application.healthcareUserId === reportedBy;
+  //   const isJobPoster = application.jobPost.userId === reportedBy;
 
-    if (!isHealthcareWorker && !isJobPoster) {
-      throw new Error("Access denied");
-    }
+  //   if (!isHealthcareWorker && !isJobPoster) {
+  //     throw new Error("Access denied");
+  //   }
 
-    const [updatedApplication] = await db
-      .update(jobApplications)
-      .set({
-        reportedAt: new Date(),
-        reportReason: data.reportReason,
-        reportMessage: data.reportMessage,
-        reportedBy: reportedBy,
-        updatedAt: new Date(),
-      })
-      .where(eq(jobApplications.id, applicationId))
-      .returning();
+  //   const [updatedApplication] = await db
+  //     .update(jobApplications)
+  //     .set({
+  //       reportedAt: new Date(),
+  //       reportReason: data.reportReason,
+  //       reportMessage: data.reportMessage,
+  //       reportedBy: reportedBy,
+  //       updatedAt: new Date(),
+  //     })
+  //     .where(eq(jobApplications.id, applicationId))
+  //     .returning();
 
-    // Create notification for admin (assuming there's an admin user or system)
-    // You would need to implement admin notification logic here
-    await NotificationService.createFromTemplate(
-      "REPORT_SUBMITTED",
-      "admin-user-id", // Replace with actual admin user ID
-      {
-        jobTitle: application.jobPost.title,
-        applicationId: application.id,
-      },
-      {
-        jobPostId: application.jobPostId,
-        jobApplicationId: application.id,
-        relatedUserId: reportedBy,
-        sendEmail: true,
-        metadata: {
-          reportReason: data.reportReason,
-          reportedUserType: isHealthcareWorker ? "healthcare" : "poster",
-        },
-      }
-    );
+  //   // Create notification for admin (assuming there's an admin user or system)
+  //   // You would need to implement admin notification logic here
+  //   await NotificationService.createFromTemplate(
+  //     "REPORT_SUBMITTED",
+  //     "admin-user-id", // Replace with actual admin user ID
+  //     {
+  //       jobTitle: application.jobPost.title,
+  //       applicationId: application.id,
+  //     },
+  //     {
+  //       jobPostId: application.jobPostId,
+  //       jobApplicationId: application.id,
+  //       relatedUserId: reportedBy,
+  //       sendEmail: true,
+  //       metadata: {
+  //         reportReason: data.reportReason,
+  //         reportedUserType: isHealthcareWorker ? "healthcare" : "poster",
+  //       },
+  //     }
+  //   );
 
-    return updatedApplication;
-  }
+  //   return updatedApplication;
+  // }
 
   // Get single application details
   static async getApplication(applicationId: string, userId: string) {
