@@ -195,6 +195,9 @@ router.get('/my-job/:jobPostId', requireNonHealthCare, async (req: Authenticated
       page: req.query.page ? parseInt(req.query.page as string) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
       status: req.query.status as string,
+      includeReviews: req.query.includeReviews === 'true',
+      reviewLimit: req.query.reviewLimit ? parseInt(req.query.reviewLimit as string) : undefined,
+      reviewOffset: req.query.reviewOffset ? parseInt(req.query.reviewOffset as string) : undefined,
     };
 
     const result = await JobApplicationService.getJobApplications(jobPostId, userId, filters);
