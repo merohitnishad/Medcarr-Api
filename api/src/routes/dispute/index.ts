@@ -69,8 +69,9 @@ router.get('/my-disputes', requireNonAdmin, async (req: AuthenticatedRequest, re
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
       status: req.query.status as string,
       disputeType: req.query.disputeType as string,
+      submittedDate: req.query.submittedDate as string,
     };
-
+    
     const result = await DisputeService.getUserDisputes(userId, filters);
 
     res.json({
