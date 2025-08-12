@@ -6,7 +6,7 @@ import {
 } from "../../db/schemas/disputeSchema.js";
 import { jobPosts } from "../../db/schemas/jobSchema.js";
 import { users } from "../../db/schemas/usersSchema.js";
-import { eq, and, desc, count, or, inArray } from "drizzle-orm";
+import { eq, and, desc, count, or, inArray, gte, lte } from "drizzle-orm";
 import { S3Service } from "../../utils/s3UploadService.js";
 import { NotificationService } from "../notification/notificationService.js";
 
@@ -31,7 +31,8 @@ export interface DisputeFilters {
   limit?: number;
   status?: string;
   disputeType?: string;
-  userId?: string; // For filtering user's own disputes
+  userId?: string;
+  submittedDate?: string;  
 }
 
 export interface DisputeDocumentUpload {
@@ -225,7 +226,7 @@ export class DisputeService {
 
   // Get user's disputes (for dashboard)
   static async getUserDisputes(userId: string, filters: DisputeFilters = {}) {
-    const { page = 1, limit = 10, status, disputeType } = filters;
+    const { page = 1, limit = 10, status, disputeType, submittedDate} = filters;
     const offset = (page - 1) * limit;
 
     const conditions = [
@@ -244,6 +245,18 @@ export class DisputeService {
       conditions.push(eq(disputes.disputeType, disputeType as any));
     }
 
+    if (submittedDate) {
+        const filterDate = new Date(submittedDate);
+        const startOfDay = new Date(filterDate.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(filterDate.setHours(23, 59, 59, 999));
+        conditions.push(
+          and(
+            gte(disputes.reportedAt, startOfDay),
+            lte(disputes.reportedAt, endOfDay)
+          )
+        );
+      }
+      
     const [totalCount] = await db
       .select({ count: count() })
       .from(disputes)
