@@ -542,8 +542,9 @@ export class DisputeService {
     }
 
     try {
-      const result = await S3Service.generatePresignedUploadUrl(
+      const result = await S3Service.generateDisputeDocumentUploadUrl(
         userId,
+        disputeId,
         fileName,
         contentType,
         3600 // 1 hour expiration

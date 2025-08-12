@@ -501,7 +501,7 @@ export class S3Service {
         Key: documentKey,
         ContentType: contentType,
         ServerSideEncryption: "AES256",
-        CacheControl: "private, max-age=86400", // 1 day cache for dispute docs
+        CacheControl: "public, max-age=31536000", // 1 year cache
         Metadata: {
           userId: userId,
           disputeId: disputeId,
