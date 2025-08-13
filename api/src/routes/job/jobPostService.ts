@@ -1535,64 +1535,116 @@ export class JobPostService {
   // Validation and helper methods (keep existing ones)
   static validateJobPostData(data: Partial<CreateJobPostData>): string[] {
     const errors: string[] = [];
-
+  
     if (data.age && (data.age < 0 || data.age > 120)) {
       errors.push("Age must be between 0 and 120");
     }
-
+  
     if (data.title && data.title.trim().length < 5) {
       errors.push("Title must be at least 5 characters long");
     }
-
+  
     if (data.postcode && !/^[A-Z0-9\s-]{3,10}$/i.test(data.postcode)) {
       errors.push("Invalid postcode format");
     }
-
+  
     if (data.address && data.address.trim().length < 10) {
       errors.push("Address must be at least 10 characters long");
     }
-
+  
     if (data.overview && data.overview.trim().length < 20) {
       errors.push("Overview must be at least 20 characters long");
     }
-
+  
     if (data.shiftLength && (data.shiftLength < 1 || data.shiftLength > 24)) {
       errors.push("Shift length must be between 1 and 24 hours");
     }
-
+  
     if (data.paymentCost && data.paymentCost < 0) {
       errors.push("Payment cost must be positive");
     }
-
-    if (data.startTime && data.endTime && data.startTime >= data.endTime) {
-      errors.push("End time must be after start time");
-    }
-
-    if (data.startTime && data.endTime && data.shiftType) {
-      const [startHour, startMinute] = data.startTime.split(":").map(Number);
-      const [endHour, endMinute] = data.endTime.split(":").map(Number);
-
-      if (data.shiftType === "day") {
-        // For day shifts, end time must be after start time on same day
-        if (data.startTime >= data.endTime) {
-          errors.push("For day shifts, end time must be after start time");
-        }
-      } else if (data.shiftType === "night") {
-        // For night shifts, we allow end time to be before start time (next day)
-        // But we should validate that it makes sense as a night shift
-        if (startHour >= 6 && startHour < 18) {
-          errors.push(
-            "Night shifts should typically start in the evening (after 18:00) or early morning (before 06:00)"
-          );
-        }
-      }
-    }
-
-    // NEW: Validate shift type
+  
+    // Validate shift type
     if (data.shiftType && !["day", "night"].includes(data.shiftType)) {
       errors.push("Shift type must be either 'day' or 'night'");
     }
-
+  
+    // Enhanced time validation based on shift type
+    if (data.startTime && data.endTime && data.shiftType) {
+      const [startHour, startMinute] = data.startTime.split(":").map(Number);
+      const [endHour, endMinute] = data.endTime.split(":").map(Number);
+  
+      if (data.shiftType === "day") {
+        // Day shift: 6 AM to 6 PM (06:00 - 18:00)
+        
+        // Validate start time is within day shift range (6 AM - 6 PM)
+        if (startHour < 6 || startHour >= 18) {
+          errors.push("Day shift start time must be between 06:00 and 18:00");
+        }
+        
+        // Validate end time is within day shift range (6 AM - 6 PM)
+        if (endHour < 6 || endHour > 18 || (endHour === 18 && endMinute > 0)) {
+          errors.push("Day shift end time must be between 06:00 and 18:00");
+        }
+        
+        // For day shifts, end time must be after start time (same day)
+        if (startHour > endHour || (startHour === endHour && startMinute >= endMinute)) {
+          errors.push("For day shifts, end time must be after start time");
+        }
+        
+      } else if (data.shiftType === "night") {
+        // Night shift: 6 PM to 6 AM (18:00 - 06:00 next day)
+        
+        // Validate start time is within night shift range (6 PM - 6 AM)
+        // Night shift can start from 18:00 (6 PM) onwards OR from 00:00 to 06:00 (6 AM)
+        if (!(startHour >= 18 || startHour < 6)) {
+          errors.push("Night shift start time must be between 18:00 and 06:00");
+        }
+        
+        // Validate end time is within night shift range
+        // Night shift can end from 00:00 to 06:00 (6 AM) OR from 18:00 onwards
+        if (!(endHour < 6 || endHour >= 18)) {
+          errors.push("Night shift end time must be between 18:00 and 06:00");
+        }
+        
+        // For night shifts, validate logical time progression
+        // Case 1: Start in evening (18:00-23:59), end in early morning (00:00-06:00)
+        // Case 2: Start in early morning (00:00-05:59), end later in early morning (same or later time before 06:00)
+        // Case 3: Start in evening, end later in evening (both >= 18:00)
+        
+        if (startHour >= 18) {
+          // Starting in evening (18:00-23:59)
+          if (endHour >= 18) {
+            // Ending same evening - must be after start time
+            if (startHour > endHour || (startHour === endHour && startMinute >= endMinute)) {
+              errors.push("For night shifts starting in evening, end time must be later than start time");
+            }
+          }
+          // If ending in early morning (00:00-05:59), it's valid (next day)
+        } else if (startHour < 6) {
+          // Starting in early morning (00:00-05:59)
+          if (endHour < 6) {
+            // Ending in early morning - must be after start time (same day)
+            if (startHour > endHour || (startHour === endHour && startMinute >= endMinute)) {
+              errors.push("For night shifts in early morning, end time must be after start time");
+            }
+          } else if (endHour >= 18) {
+            // Starting early morning, ending evening - this doesn't make sense for a night shift
+            errors.push("Invalid night shift: cannot start in early morning and end in evening");
+          }
+        }
+      }
+    }
+  
+    // Legacy validation (kept for backward compatibility, but should be covered by above)
+    // Remove this if the above validation is comprehensive enough
+    else if (data.startTime && data.endTime && !data.shiftType) {
+      // Default validation when shift type is not specified
+      if (data.startTime >= data.endTime) {
+        errors.push("End time must be after start time");
+      }
+    }
+  
     return errors;
   }
 
