@@ -10,6 +10,7 @@ import notificationRoutes from './routes/notification/index.js';
 import messageRoutes from './routes/message/index.js';
 import reviewRoutes from './routes/review/index.js';
 import disputeRoutes from './routes/dispute/index.js';
+import adminRoutes from './routes/admin/index.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import SocketManager from './routes/message/socketServer.js';
@@ -55,6 +56,7 @@ app.use('/notification', notificationRoutes);
 app.use('/message', messageRoutes);
 app.use('/review', reviewRoutes);
 app.use('/dispute', disputeRoutes);
+app.use('/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
