@@ -232,7 +232,7 @@ export class DisputeService {
     const conditions = [
       or(
         eq(disputes.reportedBy, userId),
-        eq(disputes.reportedAgainst, userId)
+        // eq(disputes.reportedAgainst, userId)
       ),
       eq(disputes.isDeleted, false)
     ];

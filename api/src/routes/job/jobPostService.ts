@@ -75,6 +75,7 @@ export interface JobPostFilters {
   type?: ("oneDay" | "weekly")[];
   paymentType?: ("hourly" | "fixed")[];
   caregiverGender?: ("male" | "female")[];
+  shiftType?: ("day" | "night")[];
   minPaymentCost?: number;
   maxPaymentCost?: number;
   startDate?: string;
@@ -574,6 +575,7 @@ export class JobPostService {
       careNeedIds,
       languageIds,
       preferenceIds,
+      shiftType
     } = filters;
 
     const offset = (page - 1) * limit;
@@ -594,6 +596,8 @@ export class JobPostService {
       conditions.push(inArray(jobPosts.paymentType, paymentType));
     if (caregiverGender && caregiverGender.length > 0)
       conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
+    if (shiftType && shiftType.length > 0)
+      conditions.push(inArray(jobPosts.shiftType, shiftType));
 
     // Payment cost filters
     if (minPaymentCost !== undefined)
@@ -793,6 +797,7 @@ export class JobPostService {
       careNeedIds,
       languageIds,
       preferenceIds,
+      shiftType
     } = filters;
 
     const offset = (page - 1) * limit;
@@ -822,6 +827,10 @@ export class JobPostService {
 
     if (caregiverGender && caregiverGender.length > 0) {
       conditions.push(inArray(jobPosts.caregiverGender, caregiverGender));
+    }
+
+    if (shiftType && shiftType.length > 0) {
+      conditions.push(inArray(jobPosts.shiftType, shiftType));
     }
 
     if (minPaymentCost !== undefined) {
