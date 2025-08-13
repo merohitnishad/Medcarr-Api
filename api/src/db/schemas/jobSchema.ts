@@ -51,6 +51,7 @@ export const jobStatus = pgEnum("job_status", [
   "completed",
   "cancelled",
 ]);
+export const shiftTypeEnum = pgEnum("shift_type", ["day", "night"]);
 
 // Job Posts Table
 export const jobPosts = pgTable(
@@ -70,6 +71,8 @@ export const jobPosts = pgTable(
     jobDate: timestamp("job_date").notNull(), // Specific date for this job
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
+    shiftType: shiftTypeEnum("shift_type").default("day").notNull(),
+    jobEndDate: timestamp("job_end_date"), // For night shifts, when the shift actually ends
     shiftLength: integer("shift_length").notNull(), // in hours
     overview: text("overview").notNull(),
     caregiverGender: caregiverGenderEnum("caregiver_gender").notNull(),

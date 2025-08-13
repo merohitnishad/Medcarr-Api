@@ -1,0 +1,1 @@
+ALTER TABLE "organization_profiles" ADD COLUMN "organization_registration_number" varchar(50) DEFAULT 'TEMP_REG_NUMBER' NOT NULL;

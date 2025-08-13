@@ -18,6 +18,7 @@ export const users = pgTable('users', {
   isDeleted: boolean('is_deleted').default(false).notNull(),
   profileVerified: boolean('profile_verified').default(false).notNull(),
   profileCompleted: boolean('profile_completed').default(false).notNull(),
+  dbsVerified: boolean('dbs_verified').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -45,6 +46,7 @@ export const organizationProfiles = pgTable('organization_profiles', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
   organizationName: varchar('organization_name', { length: 255 }).notNull(),
   organizationType: varchar('organization_type', { length: 100 }).notNull(),
+  organizationRegistrationNumber: varchar('organization_registration_number', { length: 50 }).notNull().default('TEMP_REG_NUMBER'), // Add this line
   postcode: varchar('postcode', { length: 20 }).notNull(),
   phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
   address: text('address').notNull(),

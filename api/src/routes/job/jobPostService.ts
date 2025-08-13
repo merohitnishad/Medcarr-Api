@@ -48,6 +48,7 @@ export interface CreateJobPostData {
   jobDate: string; // "2025-07-13"
   startTime: string;
   endTime: string;
+  shiftType: "day" | "night";
   shiftLength: number;
   overview: string;
   caregiverGender: "male" | "female";
@@ -162,6 +163,14 @@ export class JobPostService {
   ) {
     const jobDateTime = `${data.jobDate}-${data.startTime}`;
 
+    // Calculate job end date for night shifts
+    const jobEndDate = this.calculateJobEndDate(
+      data.jobDate,
+      data.startTime,
+      data.endTime,
+      data.shiftType
+    );
+
     // Get user type to determine validation rules
     const [user] = await tx
       .select({ userRole: users.role })
@@ -180,6 +189,7 @@ export class JobPostService {
     if (user.userRole === "organization") {
       whereConditions.push(
         eq(jobPosts.endTime, data.endTime),
+        eq(jobPosts.shiftType, data.shiftType), // NEW: Include shift type in duplicate check
         eq(jobPosts.title, data.title),
         eq(jobPosts.relationship, data.relationship),
         eq(jobPosts.gender, data.gender),
@@ -224,6 +234,8 @@ export class JobPostService {
         jobDate: new Date(data.jobDate),
         startTime: data.startTime,
         endTime: data.endTime,
+        shiftType: data.shiftType, // NEW: Set shift type
+        jobEndDate: jobEndDate,
         shiftLength: data.shiftLength,
         overview: data.overview,
         caregiverGender: data.caregiverGender,
@@ -245,6 +257,14 @@ export class JobPostService {
     data: CreateJobPostData
   ) {
     const { frequency, selectedDays, endDate } = data.recurringData!;
+
+    // Calculate job end date for night shifts
+    const jobEndDate = this.calculateJobEndDate(
+      data.jobDate,
+      data.startTime,
+      data.endTime,
+      data.shiftType
+    );
 
     const [user] = await tx
       .select({ userRole: users.role })
@@ -274,6 +294,7 @@ export class JobPostService {
         eq(jobPosts.endTime, data.endTime),
         eq(jobPosts.title, data.title),
         eq(jobPosts.relationship, data.relationship),
+        eq(jobPosts.shiftType, data.shiftType), // NEW: Include shift type
         eq(jobPosts.gender, data.gender),
         eq(jobPosts.age, data.age),
         eq(jobPosts.postcode, data.postcode),
@@ -342,6 +363,8 @@ export class JobPostService {
         jobDate: new Date(data.jobDate),
         startTime: data.startTime,
         endTime: data.endTime,
+        shiftType: data.shiftType, // NEW: Set shift type
+        jobEndDate: jobEndDate, // NEW: Set job end date for night shift
         shiftLength: data.shiftLength,
         overview: data.overview,
         caregiverGender: data.caregiverGender,
@@ -362,6 +385,14 @@ export class JobPostService {
     const createdJobs = [];
 
     for (const jobDate of jobInstances) {
+      // Calculate job end date for each recurring instance
+      const instanceJobEndDate = this.calculateJobEndDate(
+        jobDate.toISOString().split("T")[0],
+        data.startTime,
+        data.endTime,
+        data.shiftType
+      );
+
       const [childJob] = await tx
         .insert(jobPosts)
         .values({
@@ -376,6 +407,8 @@ export class JobPostService {
           jobDate,
           startTime: data.startTime,
           endTime: data.endTime,
+          shiftType: data.shiftType, // NEW: Set shift type
+          jobEndDate: instanceJobEndDate,
           shiftLength: data.shiftLength,
           overview: data.overview,
           caregiverGender: data.caregiverGender,
@@ -459,6 +492,36 @@ export class JobPostService {
         }))
       );
     }
+  }
+
+  private static calculateJobEndDate(
+    jobDate: string,
+    startTime: string,
+    endTime: string,
+    shiftType: "day" | "night"
+  ): Date | null {
+    if (shiftType === "day") {
+      return null; // Day shifts don't need separate end date
+    }
+
+    // For night shifts, if end time is earlier than start time, it's next day
+    const [startHour, startMinute] = startTime.split(":").map(Number);
+    const [endHour, endMinute] = endTime.split(":").map(Number);
+
+    const startDate = new Date(jobDate);
+
+    // If end time is earlier than start time, it's a night shift ending next day
+    if (
+      endHour < startHour ||
+      (endHour === startHour && endMinute <= startMinute)
+    ) {
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 1); // Next day
+      return endDate;
+    }
+
+    // If end time is later than start time on same day (unusual for night shift, but possible)
+    return startDate;
   }
 
   // Get a single job post
@@ -951,18 +1014,17 @@ export class JobPostService {
           with: {
             healthcareUser: {
               with: {
-                healthcareProfile: true
-              }
-            }
-          }
+                healthcareProfile: true,
+              },
+            },
+          },
         },
         reviews: {
           where: and(
             eq(reviews.reviewerId, userId), // Current user's ID
             eq(reviews.isDeleted, false)
-          )
-        }
-    
+          ),
+        },
       },
       orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
       limit,
@@ -1014,18 +1076,17 @@ export class JobPostService {
           with: {
             healthcareUser: {
               with: {
-                healthcareProfile: true
-              }
-            }
-          }
+                healthcareProfile: true,
+              },
+            },
+          },
         },
         reviews: {
           where: and(
             eq(reviews.reviewerId, userId), // Current user's ID
             eq(reviews.isDeleted, false)
-          )
-        }
-    
+          ),
+        },
       },
       orderBy: [desc(jobPosts.jobDate), desc(jobPosts.startTime)], // Most recent first
       limit,
@@ -1498,6 +1559,31 @@ export class JobPostService {
       errors.push("End time must be after start time");
     }
 
+    if (data.startTime && data.endTime && data.shiftType) {
+      const [startHour, startMinute] = data.startTime.split(":").map(Number);
+      const [endHour, endMinute] = data.endTime.split(":").map(Number);
+
+      if (data.shiftType === "day") {
+        // For day shifts, end time must be after start time on same day
+        if (data.startTime >= data.endTime) {
+          errors.push("For day shifts, end time must be after start time");
+        }
+      } else if (data.shiftType === "night") {
+        // For night shifts, we allow end time to be before start time (next day)
+        // But we should validate that it makes sense as a night shift
+        if (startHour >= 6 && startHour < 18) {
+          errors.push(
+            "Night shifts should typically start in the evening (after 18:00) or early morning (before 06:00)"
+          );
+        }
+      }
+    }
+
+    // NEW: Validate shift type
+    if (data.shiftType && !["day", "night"].includes(data.shiftType)) {
+      errors.push("Shift type must be either 'day' or 'night'");
+    }
+
     return errors;
   }
 
@@ -1951,6 +2037,7 @@ export class JobPostService {
           jobDate: jobData.jobDate,
           startTime: jobData.startTime,
           endTime: jobData.endTime,
+          shiftType: "day",
           shiftLength: jobData.shiftLength,
           overview: jobData.overview,
           caregiverGender: jobData.caregiverGender,
