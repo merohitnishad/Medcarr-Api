@@ -626,7 +626,6 @@ export class AdminService {
                 },
               },
             },
-            // REMOVED: healthcareApplications - no longer included
           },
           limit,
           offset,
@@ -650,7 +649,14 @@ export class AdminService {
           dbsVerified: user.dbsVerified,
           createdAt: user.createdAt,
           profile: user.healthcareProfile,
-          // REMOVED: jobPosts and jobApplications
+          specialities: (user.healthcareProfile.specialitiesRelation ?? []).map((sp) => ({
+            id: sp.speciality.id,
+            name: sp.speciality.name,
+          })),
+          languages: (user.healthcareProfile.languagesRelation ?? []).map((lang) => ({
+            id: lang.language.id,
+            name: lang.language.name,
+          })),
         })
       );
 

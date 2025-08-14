@@ -1597,13 +1597,13 @@ export class JobPostService {
         
         // Validate start time is within night shift range (7 PM - 11 AM)
         // Night shift can start from 19:00 (7 PM) onwards OR from 00:00 to 11:00 (11 AM)
-        if (!(startHour >= 19 || startHour < 11)) {
+        if (!(startHour >= 19 || startHour <= 11)) {
           errors.push("Night shift start time must be between 19:00 and 11:00");
         }
         
         // Validate end time is within night shift range
         // Night shift can end from 00:00 to 11:00 (11 AM) OR from 19:00 onwards
-        if (!(endHour < 11 || endHour >= 19)) {
+        if (!(endHour <= 11 || endHour >= 19)) {
           errors.push("Night shift end time must be between 19:00 and 11:00");
         }
         
