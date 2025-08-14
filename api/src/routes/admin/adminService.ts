@@ -8,13 +8,34 @@ import {
   healthcareProfileLanguages,
   healthcareProfileSpecialities,
 } from "../../db/schemas/usersSchema.js";
-import { jobPosts, jobPostCareNeeds, jobPostLanguages, jobPostPreferences } from "../../db/schemas/jobSchema.js";
+import {
+  jobPosts,
+  jobPostCareNeeds,
+  jobPostLanguages,
+  jobPostPreferences,
+} from "../../db/schemas/jobSchema.js";
 import { jobApplications } from "../../db/schemas/jobApplicationSchema.js";
 import { disputes } from "../../db/schemas/disputeSchema.js";
 import { notifications } from "../../db/schemas/notificationSchema.js";
 import { conversations, messages } from "../../db/schemas/messageSchema.js";
-import { specialities, languages, careNeeds, preferences } from "../../db/schemas/utilsSchema.js";
-import { eq, and, count, desc, asc, or, inArray, like, gte, lte } from "drizzle-orm";
+import {
+  specialities,
+  languages,
+  careNeeds,
+  preferences,
+} from "../../db/schemas/utilsSchema.js";
+import {
+  eq,
+  and,
+  count,
+  desc,
+  asc,
+  or,
+  inArray,
+  like,
+  gte,
+  lte,
+} from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
 
 export interface AdminUser {
@@ -57,7 +78,7 @@ export interface DisputeListItem {
 }
 
 export interface UpdateDisputeStatusData {
-  status: 'in_review' | 'resolved' | 'dismissed';
+  status: "in_review" | "resolved" | "dismissed";
   adminNotes?: string;
   resolutionDescription?: string;
   assignedToAdmin?: string;
@@ -83,7 +104,7 @@ export class AdminService {
     try {
       const admin = await db.query.users.findFirst({
         where: and(eq(users.id, userId), eq(users.role, "admin")),
-        columns: { id: true, role: true }
+        columns: { id: true, role: true },
       });
 
       return !!admin;
@@ -96,12 +117,14 @@ export class AdminService {
   // ==================== USER REQUESTS ====================
 
   // Get users with pending verification requests
-  static async getUserRequests(options: {
-    page?: number;
-    limit?: number;
-    role?: string;
-    searchTerm?: string;
-  } = {}): Promise<{ requests: UserRequest[]; pagination: any }> {
+  static async getUserRequests(
+    options: {
+      page?: number;
+      limit?: number;
+      role?: string;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ requests: UserRequest[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, role, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -109,15 +132,12 @@ export class AdminService {
       // Build where conditions for user requests
       const whereConditions = [
         eq(users.profileCompleted, true),
-        or(
-          eq(users.profileVerified, false),
-          eq(users.dbsVerified, false)
-        ),
+        or(eq(users.profileVerified, false), eq(users.dbsVerified, false)),
         eq(users.isActive, true),
-        eq(users.isDeleted, false)
+        eq(users.isDeleted, false),
       ];
 
-      if (role && role !== 'all') {
+      if (role && role !== "all") {
         whereConditions.push(eq(users.role, role as any));
       }
 
@@ -142,7 +162,7 @@ export class AdminService {
             profileVerified: true,
             dbsVerified: true,
             createdAt: true,
-            cognitoId: false // Exclude sensitive data
+            cognitoId: false, // Exclude sensitive data
           },
           with: {
             individualProfile: {
@@ -150,8 +170,8 @@ export class AdminService {
                 fullName: true,
                 postcode: true,
                 phoneNumber: true,
-                aboutYou: true
-              }
+                aboutYou: true,
+              },
             },
             organizationProfile: {
               columns: {
@@ -159,8 +179,8 @@ export class AdminService {
                 organizationType: true,
                 postcode: true,
                 phoneNumber: true,
-                overview: true
-              }
+                overview: true,
+              },
             },
             healthcareProfile: {
               columns: {
@@ -169,27 +189,28 @@ export class AdminService {
                 postcode: true,
                 phoneNumber: true,
                 professionalSummary: true,
-                experience: true
+                experience: true,
               },
               with: {
                 specialitiesRelation: {
-                  with: { speciality: true }
-                }
-              }
-            }
+                  with: { speciality: true },
+                },
+              },
+            },
           },
           limit,
           offset,
-          orderBy: [desc(users.createdAt)]
+          orderBy: [desc(users.createdAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
       // Transform data
-      const transformedRequests: UserRequest[] = userRequests.map(user => ({
+      const transformedRequests: UserRequest[] = userRequests.map((user) => ({
         id: user.id,
         email: user.email,
         name: user.name || undefined,
@@ -198,7 +219,11 @@ export class AdminService {
         profileVerified: user.profileVerified,
         dbsVerified: user.dbsVerified,
         createdAt: user.createdAt,
-        profile: user.individualProfile || user.organizationProfile || user.healthcareProfile || null
+        profile:
+          user.individualProfile ||
+          user.organizationProfile ||
+          user.healthcareProfile ||
+          null,
       }));
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -212,7 +237,7 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching user requests:", error);
@@ -221,7 +246,10 @@ export class AdminService {
   }
 
   // Verify user's DBS
-  static async verifyUserDBS(adminId: string, userId: string): Promise<AdminUser> {
+  static async verifyUserDBS(
+    adminId: string,
+    userId: string
+  ): Promise<AdminUser> {
     try {
       // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
@@ -234,7 +262,7 @@ export class AdminService {
         .update(users)
         .set({
           dbsVerified: true,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(users.id, userId))
         .returning({
@@ -248,7 +276,7 @@ export class AdminService {
           dbsVerified: users.dbsVerified,
           isActive: users.isActive,
           createdAt: users.createdAt,
-          updatedAt: users.updatedAt
+          updatedAt: users.updatedAt,
         });
 
       if (!updatedUser) {
@@ -262,24 +290,33 @@ export class AdminService {
           type: "system_announcement",
           priority: "normal",
           title: "DBS Verification Approved",
-          message: "Your DBS verification has been approved by our admin team. You can now access all platform features.",
+          message:
+            "Your DBS verification has been approved by our admin team. You can now access all platform features.",
           actionUrl: "/profile",
           actionLabel: "View Profile",
-          sendEmail: true
+          sendEmail: true,
         });
       } catch (notificationError) {
-        console.warn("Failed to create DBS verification notification:", notificationError);
+        console.warn(
+          "Failed to create DBS verification notification:",
+          notificationError
+        );
       }
 
       return updatedUser;
     } catch (error) {
       console.error("Error verifying user DBS:", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to verify DBS");
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to verify DBS"
+      );
     }
   }
 
   // Verify user's profile
-  static async verifyUserProfile(adminId: string, userId: string): Promise<AdminUser> {
+  static async verifyUserProfile(
+    adminId: string,
+    userId: string
+  ): Promise<AdminUser> {
     try {
       // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
@@ -292,7 +329,7 @@ export class AdminService {
         .update(users)
         .set({
           profileVerified: true,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(users.id, userId))
         .returning({
@@ -306,7 +343,7 @@ export class AdminService {
           dbsVerified: users.dbsVerified,
           isActive: users.isActive,
           createdAt: users.createdAt,
-          updatedAt: users.updatedAt
+          updatedAt: users.updatedAt,
         });
 
       if (!updatedUser) {
@@ -320,30 +357,43 @@ export class AdminService {
           type: "system_announcement",
           priority: "normal",
           title: "Profile Verification Approved",
-          message: "Your profile has been verified by our admin team. You now have full access to the platform.",
+          message:
+            "Your profile has been verified by our admin team. You now have full access to the platform.",
           actionUrl: "/profile",
           actionLabel: "View Profile",
-          sendEmail: true
+          sendEmail: true,
         });
       } catch (notificationError) {
-        console.warn("Failed to create profile verification notification:", notificationError);
+        console.warn(
+          "Failed to create profile verification notification:",
+          notificationError
+        );
       }
 
       return updatedUser;
     } catch (error) {
       console.error("Error verifying user profile:", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to verify profile");
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to verify profile"
+      );
     }
   }
 
   // ==================== USERS MANAGEMENT ====================
 
   // Get individuals with job details
-  static async getIndividuals(options: {
-    page?: number;
-    limit?: number;
-    searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
+  // adminService.ts - CHANGES ONLY
+
+  // ==================== MODIFIED USER MANAGEMENT METHODS ====================
+
+  // Modified: Get individuals - ONLY profile details, no jobs
+  static async getIndividuals(
+    options: {
+      page?: number;
+      limit?: number;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -351,17 +401,18 @@ export class AdminService {
       const whereConditions = [
         eq(users.role, "individual"),
         eq(users.isActive, true),
-        eq(users.isDeleted, false)
+        eq(users.isDeleted, false),
       ];
 
-    //   if (searchTerm) {
-    //     whereConditions.push(
-    //       or(
-    //         like(users.email, `%${searchTerm}%`),
-    //         like(users.name, `%${searchTerm}%`)
-    //       )
-    //     );
-    //   }
+      // ADD SEARCH FUNCTIONALITY
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(users.email, `%${searchTerm}%`),
+      //         like(users.name, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
 
       const [individuals, totalCount] = await Promise.all([
         db.query.users.findMany({
@@ -375,50 +426,33 @@ export class AdminService {
             profileVerified: true,
             dbsVerified: true,
             createdAt: true,
-            cognitoId: false
+            cognitoId: false,
           },
           with: {
             individualProfile: {
               with: {
                 careNeedsRelation: {
-                  with: { careNeed: true }
+                  with: { careNeed: true },
                 },
                 languagesRelation: {
-                  with: { language: true }
-                }
-              }
-            },
-            jobPosts: {
-              with: {
-                careNeedsRelation: {
-                  with: { careNeed: true }
+                  with: { language: true },
                 },
-                completedApplication: {
-                  with: {
-                    healthcareUser: {
-                      columns: {
-                        id: true,
-                        name: true,
-                        email: true
-                      }
-                    }
-                  }
-                }
               },
-              orderBy: [desc(jobPosts.createdAt)]
-            }
+            },
+            // REMOVED: jobPosts - no longer included
           },
           limit,
           offset,
-          orderBy: [desc(users.createdAt)]
+          orderBy: [desc(users.createdAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
-      const transformedUsers: UserWithJobs[] = individuals.map(user => ({
+      const transformedUsers: UserWithJobs[] = individuals.map((user) => ({
         id: user.id,
         email: user.email,
         name: user.name || undefined,
@@ -428,8 +462,7 @@ export class AdminService {
         dbsVerified: user.dbsVerified,
         createdAt: user.createdAt,
         profile: user.individualProfile,
-        jobPosts: user.jobPosts,
-        jobApplications: []
+        // REMOVED: jobPosts and jobApplications
       }));
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -443,7 +476,7 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching individuals:", error);
@@ -451,11 +484,14 @@ export class AdminService {
     }
   }
 
-  static async getOrganizations(options: {
-    page?: number;
-    limit?: number;
-    searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
+  // Modified: Get organizations - ONLY profile details, no jobs
+  static async getOrganizations(
+    options: {
+      page?: number;
+      limit?: number;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -463,17 +499,18 @@ export class AdminService {
       const whereConditions = [
         eq(users.role, "organization"),
         eq(users.isActive, true),
-        eq(users.isDeleted, false)
+        eq(users.isDeleted, false),
       ];
 
-    //   if (searchTerm) {
-    //     whereConditions.push(
-    //       or(
-    //         like(users.email, `%${searchTerm}%`),
-    //         like(users.name, `%${searchTerm}%`)
-    //       )
-    //     );
-    //   }
+      // ADD SEARCH FUNCTIONALITY
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(users.email, `%${searchTerm}%`),
+      //         like(users.name, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
 
       const [organizations, totalCount] = await Promise.all([
         db.query.users.findMany({
@@ -487,41 +524,24 @@ export class AdminService {
             profileVerified: true,
             dbsVerified: true,
             createdAt: true,
-            cognitoId: false
+            cognitoId: false,
           },
           with: {
             organizationProfile: true,
-            jobPosts: {
-              with: {
-                careNeedsRelation: {
-                  with: { careNeed: true }
-                },
-                completedApplication: {
-                  with: {
-                    healthcareUser: {
-                      columns: {
-                        id: true,
-                        name: true,
-                        email: true
-                      }
-                    }
-                  }
-                }
-              },
-              orderBy: [desc(jobPosts.createdAt)]
-            }
+            // REMOVED: jobPosts - no longer included
           },
           limit,
           offset,
-          orderBy: [desc(users.createdAt)]
+          orderBy: [desc(users.createdAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
-      const transformedUsers: UserWithJobs[] = organizations.map(user => ({
+      const transformedUsers: UserWithJobs[] = organizations.map((user) => ({
         id: user.id,
         email: user.email,
         name: user.name || undefined,
@@ -531,8 +551,7 @@ export class AdminService {
         dbsVerified: user.dbsVerified,
         createdAt: user.createdAt,
         profile: user.organizationProfile,
-        jobPosts: user.jobPosts,
-        jobApplications: []
+        // REMOVED: jobPosts and jobApplications
       }));
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -546,7 +565,7 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching organizations:", error);
@@ -554,12 +573,14 @@ export class AdminService {
     }
   }
 
-  // Get healthcare providers with job applications
-  static async getHealthcareProviders(options: {
-    page?: number;
-    limit?: number;
-    searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
+  // Modified: Get healthcare providers - ONLY profile details, no applications
+  static async getHealthcareProviders(
+    options: {
+      page?: number;
+      limit?: number;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -567,17 +588,18 @@ export class AdminService {
       const whereConditions = [
         eq(users.role, "healthcare"),
         eq(users.isActive, true),
-        eq(users.isDeleted, false)
+        eq(users.isDeleted, false),
       ];
 
-    //   if (searchTerm) {
-    //     whereConditions.push(
-    //       or(
-    //         like(users.email, `%${searchTerm}%`),
-    //         like(users.name, `%${searchTerm}%`)
-    //       )
-    //     );
-    //   }
+      // ADD SEARCH FUNCTIONALITY
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(users.email, `%${searchTerm}%`),
+      //         like(users.name, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
 
       const [healthcareProviders, totalCount] = await Promise.all([
         db.query.users.findMany({
@@ -591,60 +613,46 @@ export class AdminService {
             profileVerified: true,
             dbsVerified: true,
             createdAt: true,
-            cognitoId: false
+            cognitoId: false,
           },
           with: {
             healthcareProfile: {
               with: {
                 specialitiesRelation: {
-                  with: { speciality: true }
+                  with: { speciality: true },
                 },
                 languagesRelation: {
-                  with: { language: true }
-                }
-              }
-            },
-            // Get job applications for healthcare users
-            healthcareApplications: {
-              with: {
-                jobPost: {
-                  with: {
-                    user: {
-                      columns: {
-                        id: true,
-                        name: true,
-                        email: true
-                      }
-                    }
-                  }
-                }
+                  with: { language: true },
+                },
               },
-              orderBy: [desc(jobApplications.createdAt)]
-            }
+            },
+            // REMOVED: healthcareApplications - no longer included
           },
           limit,
           offset,
-          orderBy: [desc(users.createdAt)]
+          orderBy: [desc(users.createdAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
-      const transformedUsers: UserWithJobs[] = healthcareProviders.map(user => ({
-        id: user.id,
-        email: user.email,
-        name: user.name || undefined,
-        role: user.role,
-        profileCompleted: user.profileCompleted,
-        profileVerified: user.profileVerified,
-        dbsVerified: user.dbsVerified,
-        createdAt: user.createdAt,
-        profile: user.healthcareProfile,
-        jobPosts: [],
-        jobApplications: user.healthcareApplications
-      }));
+      const transformedUsers: UserWithJobs[] = healthcareProviders.map(
+        (user) => ({
+          id: user.id,
+          email: user.email,
+          name: user.name || undefined,
+          role: user.role,
+          profileCompleted: user.profileCompleted,
+          profileVerified: user.profileVerified,
+          dbsVerified: user.dbsVerified,
+          createdAt: user.createdAt,
+          profile: user.healthcareProfile,
+          // REMOVED: jobPosts and jobApplications
+        })
+      );
 
       const totalPages = Math.ceil(totalCount / limit);
 
@@ -657,7 +665,7 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching healthcare providers:", error);
@@ -665,35 +673,454 @@ export class AdminService {
     }
   }
 
+  // ==================== NEW JOB MANAGEMENT METHODS ====================
+
+  // NEW: Get all jobs with applicants (admin view of all platform jobs)
+  static async getAllJobsWithApplicants(
+    adminId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ jobs: any[]; pagination: any }> {
+    try {
+      // Validate admin access
+      const isAdmin = await this.validateAdminAccess(adminId);
+      if (!isAdmin) {
+        throw new Error("Access denied: Admin role required");
+      }
+
+      const { page = 1, limit = 20, status, searchTerm } = options;
+      const offset = (page - 1) * limit;
+
+      const whereConditions = [eq(jobPosts.isDeleted, false)];
+
+      if (status && status !== "all") {
+        whereConditions.push(eq(jobPosts.status, status as any));
+      }
+
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(jobPosts.title, `%${searchTerm}%`),
+      //         like(jobPosts.postcode, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
+
+      const [allJobs, totalCount] = await Promise.all([
+        db.query.jobPosts.findMany({
+          where: and(...whereConditions),
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+              },
+            },
+            careNeedsRelation: { with: { careNeed: true } },
+            languagesRelation: { with: { language: true } },
+            preferencesRelation: { with: { preference: true } },
+            completedApplication: {
+              with: {
+                healthcareUser: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+          limit,
+          offset,
+          orderBy: [desc(jobPosts.createdAt)],
+        }),
+        db
+          .select({ count: count() })
+          .from(jobPosts)
+          .where(and(...whereConditions))
+          .then((result) => result[0].count),
+      ]);
+
+      // Get applicant counts for all jobs
+      const jobIds = allJobs.map((job) => job.id);
+      let applicantCountMap = new Map<string, number>();
+
+      if (jobIds.length > 0) {
+        const applicantCounts = await db
+          .select({
+            jobPostId: jobApplications.jobPostId,
+            count: count(),
+          })
+          .from(jobApplications)
+          .where(
+            and(
+              eq(jobApplications.isDeleted, false),
+              inArray(jobApplications.jobPostId, jobIds)
+            )
+          )
+          .groupBy(jobApplications.jobPostId);
+
+        applicantCountMap = new Map(
+          applicantCounts.map((item) => [item.jobPostId, item.count])
+        );
+      }
+
+      const jobsWithApplicants = allJobs.map((job) => ({
+        ...job,
+        applicantsCount: applicantCountMap.get(job.id) || 0,
+        completedBy: job.completedApplication?.[0]?.healthcareUser || null,
+      }));
+
+      const totalPages = Math.ceil(totalCount / limit);
+
+      return {
+        jobs: jobsWithApplicants,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching all jobs:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch jobs"
+      );
+    }
+  }
+
+  // NEW: Get jobs for specific job poster (individual/organization)
+  static async getJobsForJobPoster(
+    adminId: string,
+    jobPosterId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+    } = {}
+  ): Promise<{ jobs: any[]; pagination: any }> {
+    try {
+      // Validate admin access
+      const isAdmin = await this.validateAdminAccess(adminId);
+      if (!isAdmin) {
+        throw new Error("Access denied: Admin role required");
+      }
+
+      const { page = 1, limit = 20, status } = options;
+      const offset = (page - 1) * limit;
+
+      const whereConditions = [
+        eq(jobPosts.userId, jobPosterId),
+        eq(jobPosts.isDeleted, false),
+      ];
+
+      if (status && status !== "all") {
+        whereConditions.push(eq(jobPosts.status, status as any));
+      }
+
+      const [userJobs, totalCount] = await Promise.all([
+        db.query.jobPosts.findMany({
+          where: and(...whereConditions),
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+              },
+            },
+            careNeedsRelation: { with: { careNeed: true } },
+            languagesRelation: { with: { language: true } },
+            preferencesRelation: { with: { preference: true } },
+            completedApplication: {
+              with: {
+                healthcareUser: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                  with: {
+                    healthcareProfile: true,
+                  },
+                },
+              },
+            },
+          },
+          limit,
+          offset,
+          orderBy: [desc(jobPosts.createdAt)],
+        }),
+        db
+          .select({ count: count() })
+          .from(jobPosts)
+          .where(and(...whereConditions))
+          .then((result) => result[0].count),
+      ]);
+
+      // Get detailed applicants for each job
+      const jobIds = userJobs.map((job) => job.id);
+      let applicationsByJob: Record<string, any[]> = {};
+
+      if (jobIds.length > 0) {
+        const applications = await db
+          .select({
+            jobPostId: jobApplications.jobPostId,
+            healthcareUserId: jobApplications.healthcareUserId,
+            healthcareUserName: users.name,
+            healthcareUserEmail: users.email,
+            healthcareUserImage: healthcareProfiles.image,
+            status: jobApplications.status,
+            createdAt: jobApplications.createdAt,
+          })
+          .from(jobApplications)
+          .innerJoin(users, eq(jobApplications.healthcareUserId, users.id))
+          .innerJoin(
+            healthcareProfiles,
+            eq(users.id, healthcareProfiles.userId)
+          )
+          .where(
+            and(
+              eq(jobApplications.isDeleted, false),
+              inArray(jobApplications.jobPostId, jobIds)
+            )
+          )
+          .orderBy(desc(jobApplications.createdAt));
+
+        applicationsByJob = applications.reduce((acc, app) => {
+          if (!acc[app.jobPostId]) {
+            acc[app.jobPostId] = [];
+          }
+          acc[app.jobPostId].push({
+            id: app.healthcareUserId,
+            name: app.healthcareUserName,
+            email: app.healthcareUserEmail,
+            image:
+              app.healthcareUserImage ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                app.healthcareUserName
+              )}&background=random`,
+            status: app.status,
+            appliedAt: app.createdAt,
+          });
+          return acc;
+        }, {} as Record<string, any[]>);
+      }
+
+      const jobsWithApplicants = userJobs.map((job) => ({
+        ...job,
+        applicants: applicationsByJob[job.id] || [],
+        totalApplications: applicationsByJob[job.id]?.length || 0,
+        completedBy: job.completedApplication?.[0]?.healthcareUser || null,
+      }));
+
+      const totalPages = Math.ceil(totalCount / limit);
+
+      return {
+        jobs: jobsWithApplicants,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching jobs for job poster:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch jobs"
+      );
+    }
+  }
+
+  // NEW: Get applied jobs for specific healthcare provider
+  static async getAppliedJobsForHealthcare(
+    adminId: string,
+    healthcareUserId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+    } = {}
+  ): Promise<{ applications: any[]; pagination: any }> {
+    try {
+      // Validate admin access
+      const isAdmin = await this.validateAdminAccess(adminId);
+      if (!isAdmin) {
+        throw new Error("Access denied: Admin role required");
+      }
+
+      const { page = 1, limit = 20, status } = options;
+      const offset = (page - 1) * limit;
+
+      const whereConditions = [
+        eq(jobApplications.healthcareUserId, healthcareUserId),
+        eq(jobApplications.isDeleted, false),
+      ];
+
+      if (status && status !== "all") {
+        whereConditions.push(eq(jobApplications.status, status as any));
+      }
+
+      const [applications, totalCount] = await Promise.all([
+        db.query.jobApplications.findMany({
+          where: and(...whereConditions),
+          with: {
+            jobPost: {
+              with: {
+                user: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+                careNeedsRelation: { with: { careNeed: true } },
+                languagesRelation: { with: { language: true } },
+                preferencesRelation: { with: { preference: true } },
+              },
+            },
+            healthcareUser: {
+              columns: {
+                id: true,
+                name: true,
+                email: true,
+              },
+              with: {
+                healthcareProfile: true,
+              },
+            },
+          },
+          limit,
+          offset,
+          orderBy: [desc(jobApplications.createdAt)],
+        }),
+        db
+          .select({ count: count() })
+          .from(jobApplications)
+          .where(and(...whereConditions))
+          .then((result) => result[0].count),
+      ]);
+
+      const totalPages = Math.ceil(totalCount / limit);
+
+      return {
+        applications,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching applied jobs for healthcare:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch applications"
+      );
+    }
+  }
+
+  // NEW: Get reviews for specific healthcare provider (delegates to ReviewService)
+  static async getReviewsForHealthcare(
+    adminId: string,
+    healthcareUserId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      includePrivate?: boolean;
+    } = {}
+  ): Promise<{ reviews: any[]; total: number; pagination: any }> {
+    try {
+      // Validate admin access
+      const isAdmin = await this.validateAdminAccess(adminId);
+      if (!isAdmin) {
+        throw new Error("Access denied: Admin role required");
+      }
+
+      const { page = 1, limit = 20, includePrivate = true } = options;
+      const offset = (page - 1) * limit;
+
+      // Import ReviewService here to avoid circular dependencies
+      const { ReviewService } = await import("../review/reviewService.js");
+
+      const result = await ReviewService.getHealthcareProviderReviews(
+        healthcareUserId,
+        {
+          limit,
+          offset,
+          includePrivate, // Admin can see private reviews
+          currentUserId: adminId,
+        }
+      );
+
+      const totalPages = Math.ceil(result.total / limit);
+
+      return {
+        reviews: result.reviews,
+        total: result.total,
+        pagination: {
+          page,
+          limit,
+          total: result.total,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching reviews for healthcare:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch reviews"
+      );
+    }
+  }
+
   // ==================== DISPUTES MANAGEMENT ====================
 
   // Get all disputes
-  static async getDisputes(options: {
-    page?: number;
-    limit?: number;
-    status?: string;
-    searchTerm?: string;
-  } = {}): Promise<{ disputes: DisputeListItem[]; pagination: any }> {
+  static async getDisputes(
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+      searchTerm?: string;
+    } = {}
+  ): Promise<{ disputes: DisputeListItem[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, status, searchTerm } = options;
       const offset = (page - 1) * limit;
 
-      const whereConditions = [
-        eq(disputes.isDeleted, false)
-      ];
+      const whereConditions = [eq(disputes.isDeleted, false)];
 
-      if (status && status !== 'all') {
+      if (status && status !== "all") {
         whereConditions.push(eq(disputes.status, status as any));
       }
 
-    //   if (searchTerm) {
-    //     whereConditions.push(
-    //       or(
-    //         like(disputes.disputeNumber, `%${searchTerm}%`),
-    //         like(disputes.title, `%${searchTerm}%`)
-    //       )
-    //     );
-    //   }
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(disputes.disputeNumber, `%${searchTerm}%`),
+      //         like(disputes.title, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
 
       const [disputesList, totalCount] = await Promise.all([
         db.query.disputes.findMany({
@@ -703,65 +1130,70 @@ export class AdminService {
               columns: {
                 id: true,
                 name: true,
-                email: true
-              }
+                email: true,
+              },
             },
             reportedAgainstUser: {
               columns: {
                 id: true,
                 name: true,
-                email: true
-              }
+                email: true,
+              },
             },
             jobPost: {
               columns: {
                 id: true,
-                title: true
-              }
+                title: true,
+              },
             },
             assignedAdmin: {
               columns: {
                 id: true,
-                name: true
-              }
-            }
+                name: true,
+              },
+            },
           },
           limit,
           offset,
-          orderBy: [desc(disputes.reportedAt)]
+          orderBy: [desc(disputes.reportedAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(disputes)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
-      const transformedDisputes: DisputeListItem[] = disputesList.map(dispute => ({
-        id: dispute.id,
-        disputeNumber: dispute.disputeNumber,
-        disputeType: dispute.disputeType,
-        title: dispute.title,
-        status: dispute.status,
-        reportedBy: {
-          id: dispute.reportedByUser.id,
-          name: dispute.reportedByUser.name || 'Unknown',
-          email: dispute.reportedByUser.email
-        },
-        reportedAgainst: {
-          id: dispute.reportedAgainstUser.id,
-          name: dispute.reportedAgainstUser.name || 'Unknown',
-          email: dispute.reportedAgainstUser.email
-        },
-        jobPost: {
-          id: dispute.jobPost.id,
-          title: dispute.jobPost.title
-        },
-        reportedAt: dispute.reportedAt,
-        assignedToAdmin: dispute.assignedAdmin ? {
-          id: dispute.assignedAdmin.id,
-          name: dispute.assignedAdmin.name || 'Unknown'
-        } : undefined
-      }));
+      const transformedDisputes: DisputeListItem[] = disputesList.map(
+        (dispute) => ({
+          id: dispute.id,
+          disputeNumber: dispute.disputeNumber,
+          disputeType: dispute.disputeType,
+          title: dispute.title,
+          status: dispute.status,
+          reportedBy: {
+            id: dispute.reportedByUser.id,
+            name: dispute.reportedByUser.name || "Unknown",
+            email: dispute.reportedByUser.email,
+          },
+          reportedAgainst: {
+            id: dispute.reportedAgainstUser.id,
+            name: dispute.reportedAgainstUser.name || "Unknown",
+            email: dispute.reportedAgainstUser.email,
+          },
+          jobPost: {
+            id: dispute.jobPost.id,
+            title: dispute.jobPost.title,
+          },
+          reportedAt: dispute.reportedAt,
+          assignedToAdmin: dispute.assignedAdmin
+            ? {
+                id: dispute.assignedAdmin.id,
+                name: dispute.assignedAdmin.name || "Unknown",
+              }
+            : undefined,
+        })
+      );
 
       const totalPages = Math.ceil(totalCount / limit);
 
@@ -774,7 +1206,7 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching disputes:", error);
@@ -792,7 +1224,7 @@ export class AdminService {
       // Verify admin role
       const admin = await tx.query.users.findFirst({
         where: eq(users.id, adminId),
-        columns: { id: true, role: true }
+        columns: { id: true, role: true },
       });
 
       if (!admin || admin.role !== "admin") {
@@ -801,21 +1233,18 @@ export class AdminService {
 
       // Get dispute
       const dispute = await tx.query.disputes.findFirst({
-        where: and(
-          eq(disputes.id, disputeId),
-          eq(disputes.isDeleted, false)
-        ),
+        where: and(eq(disputes.id, disputeId), eq(disputes.isDeleted, false)),
         with: {
           reportedByUser: {
-            columns: { id: true, name: true }
+            columns: { id: true, name: true },
           },
           reportedAgainstUser: {
-            columns: { id: true, name: true }
+            columns: { id: true, name: true },
           },
           jobPost: {
-            columns: { id: true, title: true }
-          }
-        }
+            columns: { id: true, title: true },
+          },
+        },
       });
 
       if (!dispute) {
@@ -875,7 +1304,7 @@ export class AdminService {
             metadata: {
               oldStatus: dispute.status,
               newStatus: data.status,
-            }
+            },
           }
         )
       );
@@ -898,7 +1327,7 @@ export class AdminService {
             metadata: {
               oldStatus: dispute.status,
               newStatus: data.status,
-            }
+            },
           }
         )
       );
@@ -928,10 +1357,7 @@ export class AdminService {
 
       // Get dispute with job application
       const dispute = await db.query.disputes.findFirst({
-        where: and(
-          eq(disputes.id, disputeId),
-          eq(disputes.isDeleted, false)
-        ),
+        where: and(eq(disputes.id, disputeId), eq(disputes.isDeleted, false)),
         with: {
           jobPost: {
             with: {
@@ -947,33 +1373,33 @@ export class AdminService {
                               id: true,
                               name: true,
                               email: true,
-                              role: true
-                            }
-                          }
+                              role: true,
+                            },
+                          },
                         },
-                        orderBy: [asc(messages.createdAt)]
+                        orderBy: [asc(messages.createdAt)],
                       },
                       jobPoster: {
                         columns: {
                           id: true,
                           name: true,
-                          email: true
-                        }
+                          email: true,
+                        },
                       },
                       healthcareUser: {
                         columns: {
                           id: true,
                           name: true,
-                          email: true
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+                          email: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!dispute) {
@@ -990,10 +1416,10 @@ export class AdminService {
             id: dispute.id,
             disputeNumber: dispute.disputeNumber,
             title: dispute.title,
-            status: dispute.status
+            status: dispute.status,
           },
           conversation: null,
-          messages: []
+          messages: [],
         };
       }
 
@@ -1002,26 +1428,28 @@ export class AdminService {
           id: dispute.id,
           disputeNumber: dispute.disputeNumber,
           title: dispute.title,
-          status: dispute.status
+          status: dispute.status,
         },
         conversation: {
           id: conversation.id,
           jobPoster: conversation.jobPoster,
           healthcareUser: conversation.healthcareUser,
-          createdAt: conversation.createdAt
+          createdAt: conversation.createdAt,
         },
-        messages: conversation.messages.map(message => ({
+        messages: conversation.messages.map((message) => ({
           id: message.id,
           content: message.content,
           messageType: message.messageType,
           sender: message.sender,
           createdAt: message.createdAt,
-          readAt: message.readAt
-        }))
+          readAt: message.readAt,
+        })),
       };
     } catch (error) {
       console.error("Error fetching dispute conversation:", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to fetch conversation");
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch conversation"
+      );
     }
   }
 
@@ -1047,15 +1475,13 @@ export class AdminService {
       const { page = 1, limit = 50, isRead, type } = options;
       const offset = (page - 1) * limit;
 
-      const whereConditions = [
-        eq(notifications.userId, adminId)
-      ];
+      const whereConditions = [eq(notifications.userId, adminId)];
 
       if (isRead !== undefined) {
         whereConditions.push(eq(notifications.isRead, isRead));
       }
 
-      if (type && type !== 'all') {
+      if (type && type !== "all") {
         whereConditions.push(eq(notifications.type, type as any));
       }
 
@@ -1067,37 +1493,38 @@ export class AdminService {
               columns: {
                 id: true,
                 name: true,
-                email: true
-              }
+                email: true,
+              },
             },
             jobPost: {
               columns: {
                 id: true,
-                title: true
-              }
+                title: true,
+              },
             },
             jobApplication: {
               columns: {
                 id: true,
-                status: true
-              }
+                status: true,
+              },
             },
             dispute: {
               columns: {
                 id: true,
                 disputeNumber: true,
-                title: true
-              }
-            }
+                title: true,
+              },
+            },
           },
           limit,
           offset,
-          orderBy: [desc(notifications.createdAt)]
+          orderBy: [desc(notifications.createdAt)],
         }),
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(notifications)
           .where(and(...whereConditions))
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -1111,11 +1538,13 @@ export class AdminService {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching admin notifications:", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to fetch notifications");
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to fetch notifications"
+      );
     }
   }
 
@@ -1136,7 +1565,7 @@ export class AdminService {
         .set({
           isRead: true,
           readAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(
           and(
@@ -1167,7 +1596,7 @@ export class AdminService {
         .set({
           isRead: true,
           readAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(
           and(
@@ -1201,21 +1630,18 @@ export class AdminService {
         totalJobPosts,
         activeDisputes,
         totalApplications,
-        unreadNotifications
+        unreadNotifications,
       ] = await Promise.all([
         // Total users
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
-          .where(
-            and(
-              eq(users.isActive, true),
-              eq(users.isDeleted, false)
-            )
-          )
-          .then(result => result[0].count),
+          .where(and(eq(users.isActive, true), eq(users.isDeleted, false)))
+          .then((result) => result[0].count),
 
         // Pending verifications
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(users)
           .where(
             and(
@@ -1228,21 +1654,20 @@ export class AdminService {
               eq(users.isDeleted, false)
             )
           )
-          .then(result => result[0].count),
+          .then((result) => result[0].count),
 
         // Total job posts
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(jobPosts)
           .where(
-            and(
-              eq(jobPosts.isActive, true),
-              eq(jobPosts.isDeleted, false)
-            )
+            and(eq(jobPosts.isActive, true), eq(jobPosts.isDeleted, false))
           )
-          .then(result => result[0].count),
+          .then((result) => result[0].count),
 
         // Active disputes
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(disputes)
           .where(
             and(
@@ -1250,10 +1675,11 @@ export class AdminService {
               eq(disputes.isDeleted, false)
             )
           )
-          .then(result => result[0].count),
+          .then((result) => result[0].count),
 
         // Total applications
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(jobApplications)
           .where(
             and(
@@ -1261,10 +1687,11 @@ export class AdminService {
               eq(jobApplications.isDeleted, false)
             )
           )
-          .then(result => result[0].count),
+          .then((result) => result[0].count),
 
         // Unread admin notifications
-        db.select({ count: count() })
+        db
+          .select({ count: count() })
           .from(notifications)
           .where(
             and(
@@ -1273,7 +1700,7 @@ export class AdminService {
               eq(notifications.isActive, true)
             )
           )
-          .then(result => result[0].count)
+          .then((result) => result[0].count),
       ]);
 
       return {
@@ -1282,7 +1709,7 @@ export class AdminService {
         totalJobPosts,
         activeDisputes,
         totalApplications,
-        unreadNotifications
+        unreadNotifications,
       };
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -1302,15 +1729,10 @@ export class AdminService {
       const roleDistribution = await db
         .select({
           role: users.role,
-          count: count()
+          count: count(),
         })
         .from(users)
-        .where(
-          and(
-            eq(users.isActive, true),
-            eq(users.isDeleted, false)
-          )
-        )
+        .where(and(eq(users.isActive, true), eq(users.isDeleted, false)))
         .groupBy(users.role);
 
       return roleDistribution;
@@ -1333,132 +1755,149 @@ export class AdminService {
       }
 
       // Get recent activities from different tables
-      const [recentUsers, recentJobPosts, recentDisputes, recentApplications] = await Promise.all([
-        // Recent user registrations
-        db.query.users.findMany({
-          where: and(
-            eq(users.isActive, true),
-            eq(users.isDeleted, false)
-          ),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            createdAt: true
-          },
-          limit: 5,
-          orderBy: [desc(users.createdAt)]
-        }),
-
-        // Recent job posts
-        db.query.jobPosts.findMany({
-          where: and(
-            eq(jobPosts.isActive, true),
-            eq(jobPosts.isDeleted, false)
-          ),
-          columns: {
-            id: true,
-            title: true,
-            createdAt: true
-          },
-          with: {
-            user: {
-              columns: {
-                id: true,
-                name: true,
-                email: true
-              }
-            }
-          },
-          limit: 5,
-          orderBy: [desc(jobPosts.createdAt)]
-        }),
-
-        // Recent disputes
-        db.query.disputes.findMany({
-          where: eq(disputes.isDeleted, false),
-          columns: {
-            id: true,
-            disputeNumber: true,
-            title: true,
-            status: true,
-            reportedAt: true
-          },
-          limit: 5,
-          orderBy: [desc(disputes.reportedAt)]
-        }),
-
-        // Recent applications
-        db.query.jobApplications.findMany({
-          where: and(
-            eq(jobApplications.isActive, true),
-            eq(jobApplications.isDeleted, false)
-          ),
-          columns: {
-            id: true,
-            status: true,
-            createdAt: true
-          },
-          with: {
-            jobPost: {
-              columns: {
-                id: true,
-                title: true
-              }
+      const [recentUsers, recentJobPosts, recentDisputes, recentApplications] =
+        await Promise.all([
+          // Recent user registrations
+          db.query.users.findMany({
+            where: and(eq(users.isActive, true), eq(users.isDeleted, false)),
+            columns: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              createdAt: true,
             },
-            healthcareUser: {
-              columns: {
-                id: true,
-                name: true,
-                email: true
-              }
-            }
-          },
-          limit: 5,
-          orderBy: [desc(jobApplications.createdAt)]
-        })
-      ]);
+            limit: 5,
+            orderBy: [desc(users.createdAt)],
+          }),
+
+          // Recent job posts
+          db.query.jobPosts.findMany({
+            where: and(
+              eq(jobPosts.isActive, true),
+              eq(jobPosts.isDeleted, false)
+            ),
+            columns: {
+              id: true,
+              title: true,
+              createdAt: true,
+            },
+            with: {
+              user: {
+                columns: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+            limit: 5,
+            orderBy: [desc(jobPosts.createdAt)],
+          }),
+
+          // Recent disputes
+          db.query.disputes.findMany({
+            where: eq(disputes.isDeleted, false),
+            columns: {
+              id: true,
+              disputeNumber: true,
+              title: true,
+              status: true,
+              reportedAt: true,
+            },
+            limit: 5,
+            orderBy: [desc(disputes.reportedAt)],
+          }),
+
+          // Recent applications
+          db.query.jobApplications.findMany({
+            where: and(
+              eq(jobApplications.isActive, true),
+              eq(jobApplications.isDeleted, false)
+            ),
+            columns: {
+              id: true,
+              status: true,
+              createdAt: true,
+            },
+            with: {
+              jobPost: {
+                columns: {
+                  id: true,
+                  title: true,
+                },
+              },
+              healthcareUser: {
+                columns: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+            limit: 5,
+            orderBy: [desc(jobApplications.createdAt)],
+          }),
+        ]);
 
       // Combine and format activities
       const activities = [
-        ...recentUsers.map(user => ({
-          type: 'user_registration',
+        ...recentUsers.map((user) => ({
+          type: "user_registration",
           id: user.id,
           title: `New ${user.role} registered`,
           description: `${user.name || user.email} joined the platform`,
           timestamp: user.createdAt,
-          relatedEntity: { type: 'user', id: user.id, name: user.name || user.email }
+          relatedEntity: {
+            type: "user",
+            id: user.id,
+            name: user.name || user.email,
+          },
         })),
-        ...recentJobPosts.map(job => ({
-          type: 'job_posted',
+        ...recentJobPosts.map((job) => ({
+          type: "job_posted",
           id: job.id,
-          title: 'New job posted',
-          description: `${job.user.name || job.user.email} posted "${job.title}"`,
+          title: "New job posted",
+          description: `${job.user.name || job.user.email} posted "${
+            job.title
+          }"`,
           timestamp: job.createdAt,
-          relatedEntity: { type: 'job', id: job.id, name: job.title }
+          relatedEntity: { type: "job", id: job.id, name: job.title },
         })),
-        ...recentDisputes.map(dispute => ({
-          type: 'dispute_created',
+        ...recentDisputes.map((dispute) => ({
+          type: "dispute_created",
           id: dispute.id,
-          title: 'New dispute created',
+          title: "New dispute created",
           description: `Dispute ${dispute.disputeNumber}: ${dispute.title}`,
           timestamp: dispute.reportedAt,
-          relatedEntity: { type: 'dispute', id: dispute.id, name: dispute.disputeNumber }
+          relatedEntity: {
+            type: "dispute",
+            id: dispute.id,
+            name: dispute.disputeNumber,
+          },
         })),
-        ...recentApplications.map(app => ({
-          type: 'application_submitted',
+        ...recentApplications.map((app) => ({
+          type: "application_submitted",
           id: app.id,
-          title: 'New job application',
-          description: `${app.healthcareUser.name || app.healthcareUser.email} applied for "${app.jobPost.title}"`,
+          title: "New job application",
+          description: `${
+            app.healthcareUser.name || app.healthcareUser.email
+          } applied for "${app.jobPost.title}"`,
           timestamp: app.createdAt,
-          relatedEntity: { type: 'application', id: app.id, name: app.jobPost.title }
-        }))
+          relatedEntity: {
+            type: "application",
+            id: app.id,
+            name: app.jobPost.title,
+          },
+        })),
       ];
 
       // Sort by timestamp and return limited results
       return activities
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
         .slice(0, limit);
     } catch (error) {
       console.error("Error fetching recent activity:", error);
@@ -1478,10 +1917,7 @@ export class AdminService {
   static async getAdminInfo(adminId: string): Promise<AdminUser | null> {
     try {
       const admin = await db.query.users.findFirst({
-        where: and(
-          eq(users.id, adminId),
-          eq(users.role, "admin")
-        ),
+        where: and(eq(users.id, adminId), eq(users.role, "admin")),
         columns: {
           id: true,
           cognitoId: true,
@@ -1493,8 +1929,8 @@ export class AdminService {
           dbsVerified: true,
           isActive: true,
           createdAt: true,
-          updatedAt: true
-        }
+          updatedAt: true,
+        },
       });
 
       return admin || null;
