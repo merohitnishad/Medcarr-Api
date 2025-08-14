@@ -101,7 +101,7 @@ export class AdminService {
     limit?: number;
     role?: string;
     searchTerm?: string;
-  } = {}): Promise<{ data: UserRequest[]; pagination: any }> {
+  } = {}): Promise<{ requests: UserRequest[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, role, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -204,7 +204,7 @@ export class AdminService {
       const totalPages = Math.ceil(totalCount / limit);
 
       return {
-        data: transformedRequests,
+        requests: transformedRequests,
         pagination: {
           page,
           limit,
@@ -343,7 +343,7 @@ export class AdminService {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
+  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -435,7 +435,7 @@ export class AdminService {
       const totalPages = Math.ceil(totalCount / limit);
 
       return {
-        data: transformedUsers,
+        users: transformedUsers,
         pagination: {
           page,
           limit,
@@ -451,12 +451,11 @@ export class AdminService {
     }
   }
 
-  // Get organizations with job details
   static async getOrganizations(options: {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
+  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -539,7 +538,7 @@ export class AdminService {
       const totalPages = Math.ceil(totalCount / limit);
 
       return {
-        data: transformedUsers,
+        users: transformedUsers,
         pagination: {
           page,
           limit,
@@ -560,7 +559,7 @@ export class AdminService {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
+  } = {}): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -650,7 +649,7 @@ export class AdminService {
       const totalPages = Math.ceil(totalCount / limit);
 
       return {
-        data: transformedUsers,
+        users: transformedUsers,
         pagination: {
           page,
           limit,
@@ -674,7 +673,7 @@ export class AdminService {
     limit?: number;
     status?: string;
     searchTerm?: string;
-  } = {}): Promise<{ data: DisputeListItem[]; pagination: any }> {
+  } = {}): Promise<{ disputes: DisputeListItem[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, status, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -767,7 +766,7 @@ export class AdminService {
       const totalPages = Math.ceil(totalCount / limit);
 
       return {
-        data: transformedDisputes,
+        disputes: transformedDisputes,
         pagination: {
           page,
           limit,

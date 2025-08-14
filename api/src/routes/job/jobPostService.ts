@@ -1638,12 +1638,12 @@ export class JobPostService {
   
     // Legacy validation (kept for backward compatibility, but should be covered by above)
     // Remove this if the above validation is comprehensive enough
-    else if (data.startTime && data.endTime && !data.shiftType) {
-      // Default validation when shift type is not specified
-      if (data.startTime >= data.endTime) {
-        errors.push("End time must be after start time");
-      }
-    }
+    // else if (data.startTime && data.endTime && !data.shiftType) {
+    //   // Default validation when shift type is not specified
+    //   if (data.startTime >= data.endTime) {
+    //     errors.push("End time must be after start time");
+    //   }
+    // }
   
     return errors;
   }
