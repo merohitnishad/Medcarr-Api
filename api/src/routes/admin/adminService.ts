@@ -37,6 +37,7 @@ import {
   lte,
 } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
+import { ReviewService } from "../review/reviewService.js";
 
 export interface AdminUser {
   id: string;
@@ -387,7 +388,8 @@ export class AdminService {
   // ==================== MODIFIED USER MANAGEMENT METHODS ====================
 
   // Modified: Get individuals - ONLY profile details, no jobs
-  static async getIndividuals(
+  // Fixed getIndividuals method
+static async getIndividuals(
     options: {
       page?: number;
       limit?: number;
@@ -397,13 +399,13 @@ export class AdminService {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
-
+  
       const whereConditions = [
         eq(users.role, "individual"),
         eq(users.isActive, true),
         eq(users.isDeleted, false),
       ];
-
+  
       // ADD SEARCH FUNCTIONALITY
       //   if (searchTerm) {
       //     whereConditions.push(
@@ -413,7 +415,7 @@ export class AdminService {
       //       )
       //     );
       //   }
-
+  
       const [individuals, totalCount] = await Promise.all([
         db.query.users.findMany({
           where: and(...whereConditions),
@@ -439,7 +441,6 @@ export class AdminService {
                 },
               },
             },
-            // REMOVED: jobPosts - no longer included
           },
           limit,
           offset,
@@ -451,22 +452,65 @@ export class AdminService {
           .where(and(...whereConditions))
           .then((result) => result[0].count),
       ]);
-
-      const transformedUsers: UserWithJobs[] = individuals.map((user) => ({
-        id: user.id,
-        email: user.email,
-        name: user.name || undefined,
-        role: user.role,
-        profileCompleted: user.profileCompleted,
-        profileVerified: user.profileVerified,
-        dbsVerified: user.dbsVerified,
-        createdAt: user.createdAt,
-        profile: user.individualProfile,
-        // REMOVED: jobPosts and jobApplications
-      }));
-
+  
+      const transformedUsers: UserWithJobs[] = individuals.map((user) => {
+        // Create a base user object
+        const baseUser: UserWithJobs = {
+          id: user.id,
+          email: user.email,
+          name: user.name || undefined,
+          role: user.role,
+          profileCompleted: user.profileCompleted,
+          profileVerified: user.profileVerified,
+          dbsVerified: user.dbsVerified,
+          createdAt: user.createdAt,
+          profile: null,
+        };
+  
+        // Transform individual profile if it exists
+        if (user.individualProfile) {
+          const {
+            careNeedsRelation,
+            languagesRelation,
+            ...restProfile
+          } = user.individualProfile;
+  
+          // Create the transformed profile with additional computed properties
+          const transformedProfile = {
+            ...restProfile,
+            careNeeds: (careNeedsRelation ?? []).map((cn) => ({
+              id: cn.careNeed.id,
+              name: cn.careNeed.name,
+            })),
+            languages: (languagesRelation ?? []).map((lang) => ({
+              id: lang.language.id,
+              name: lang.language.name,
+            })),
+          };
+  
+          baseUser.profile = transformedProfile;
+        }
+  
+        // Add careNeeds and languages at the top level for backward compatibility
+        const careNeeds = user.individualProfile?.careNeedsRelation?.map((cn) => ({
+          id: cn.careNeed.id,
+          name: cn.careNeed.name,
+        })) ?? [];
+  
+        const languages = user.individualProfile?.languagesRelation?.map((lang) => ({
+          id: lang.language.id,
+          name: lang.language.name,
+        })) ?? [];
+  
+        return {
+          ...baseUser,
+          careNeeds,
+          languages,
+        };
+      });
+  
       const totalPages = Math.ceil(totalCount / limit);
-
+  
       return {
         users: transformedUsers,
         pagination: {
@@ -574,6 +618,7 @@ export class AdminService {
   }
 
   // Modified: Get healthcare providers - ONLY profile details, no applications
+  // Fixed getHealthcareProviders method
   static async getHealthcareProviders(
     options: {
       page?: number;
@@ -638,25 +683,79 @@ export class AdminService {
           .then((result) => result[0].count),
       ]);
 
-      const transformedUsers: UserWithJobs[] = healthcareProviders.map(
-        (user) => ({
-          id: user.id,
-          email: user.email,
-          name: user.name || undefined,
-          role: user.role,
-          profileCompleted: user.profileCompleted,
-          profileVerified: user.profileVerified,
-          dbsVerified: user.dbsVerified,
-          createdAt: user.createdAt,
-          profile: user.healthcareProfile,
-          specialities: (user.healthcareProfile.specialitiesRelation ?? []).map((sp) => ({
-            id: sp.speciality.id,
-            name: sp.speciality.name,
-          })),
-          languages: (user.healthcareProfile.languagesRelation ?? []).map((lang) => ({
-            id: lang.language.id,
-            name: lang.language.name,
-          })),
+      const transformedUsers: UserWithJobs[] = await Promise.all(
+        healthcareProviders.map(async (user) => {
+          // Create a base user object
+          const baseUser: UserWithJobs = {
+            id: user.id,
+            email: user.email,
+            name: user.name || undefined,
+            role: user.role,
+            profileCompleted: user.profileCompleted,
+            profileVerified: user.profileVerified,
+            dbsVerified: user.dbsVerified,
+            createdAt: user.createdAt,
+            profile: null,
+          };
+
+          // Transform healthcare profile if it exists
+          if (user.healthcareProfile) {
+            const {
+              specialitiesRelation,
+              languagesRelation,
+              image: imageRaw,
+              preferredTime: preferredTimeRaw,
+              experience: experienceRaw,
+              ...restProfile
+            } = user.healthcareProfile;
+
+            // Create the transformed profile with additional computed properties
+            const transformedProfile = {
+              ...restProfile,
+              // Add the transformed specialities and languages as separate properties
+              specialities: (specialitiesRelation ?? []).map((sp) => ({
+                id: sp.speciality.id,
+                name: sp.speciality.name,
+              })),
+              languages: (languagesRelation ?? []).map((lang) => ({
+                id: lang.language.id,
+                name: lang.language.name,
+              })),
+            };
+
+            // Add review stats
+            try {
+              const reviewStats = await ReviewService.getReviewStats(user.id);
+              (transformedProfile as any).reviewStats = reviewStats;
+            } catch (error) {
+              console.warn(
+                `Failed to fetch review stats for user ${user.id}:`,
+                error
+              );
+              // Continue without review stats rather than failing
+            }
+
+            baseUser.profile = transformedProfile;
+          }
+
+          // Add specialities and languages at the top level for backward compatibility
+          const specialities =
+            user.healthcareProfile?.specialitiesRelation?.map((sp) => ({
+              id: sp.speciality.id,
+              name: sp.speciality.name,
+            })) ?? [];
+
+          const languages =
+            user.healthcareProfile?.languagesRelation?.map((lang) => ({
+              id: lang.language.id,
+              name: lang.language.name,
+            })) ?? [];
+
+          return {
+            ...baseUser,
+            specialities,
+            languages,
+          };
         })
       );
 
