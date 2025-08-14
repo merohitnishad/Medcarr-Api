@@ -71,8 +71,8 @@ export interface DisputeListItem {
   disputeType: string;
   title: string;
   status: string;
-  reportedBy: { id: string; name: string; email: string };
-  reportedAgainst: { id: string; name: string; email: string };
+  reportedByUser: { id: string; name: string; email: string };
+  reportedAgainstUser: { id: string; name: string; email: string };
   jobPost: { id: string; title: string };
   reportedAt: Date;
   assignedToAdmin?: { id: string; name: string };
@@ -383,13 +383,8 @@ export class AdminService {
   // ==================== USERS MANAGEMENT ====================
 
   // Get individuals with job details
-  // adminService.ts - CHANGES ONLY
 
-  // ==================== MODIFIED USER MANAGEMENT METHODS ====================
-
-  // Modified: Get individuals - ONLY profile details, no jobs
-  // Fixed getIndividuals method
-static async getIndividuals(
+  static async getIndividuals(
     options: {
       page?: number;
       limit?: number;
@@ -399,13 +394,13 @@ static async getIndividuals(
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
-  
+
       const whereConditions = [
         eq(users.role, "individual"),
         eq(users.isActive, true),
         eq(users.isDeleted, false),
       ];
-  
+
       // ADD SEARCH FUNCTIONALITY
       //   if (searchTerm) {
       //     whereConditions.push(
@@ -415,7 +410,7 @@ static async getIndividuals(
       //       )
       //     );
       //   }
-  
+
       const [individuals, totalCount] = await Promise.all([
         db.query.users.findMany({
           where: and(...whereConditions),
@@ -452,7 +447,7 @@ static async getIndividuals(
           .where(and(...whereConditions))
           .then((result) => result[0].count),
       ]);
-  
+
       const transformedUsers: UserWithJobs[] = individuals.map((user) => {
         // Create a base user object
         const baseUser: UserWithJobs = {
@@ -466,15 +461,12 @@ static async getIndividuals(
           createdAt: user.createdAt,
           profile: null,
         };
-  
+
         // Transform individual profile if it exists
         if (user.individualProfile) {
-          const {
-            careNeedsRelation,
-            languagesRelation,
-            ...restProfile
-          } = user.individualProfile;
-  
+          const { careNeedsRelation, languagesRelation, ...restProfile } =
+            user.individualProfile;
+
           // Create the transformed profile with additional computed properties
           const transformedProfile = {
             ...restProfile,
@@ -487,30 +479,32 @@ static async getIndividuals(
               name: lang.language.name,
             })),
           };
-  
+
           baseUser.profile = transformedProfile;
         }
-  
+
         // Add careNeeds and languages at the top level for backward compatibility
-        const careNeeds = user.individualProfile?.careNeedsRelation?.map((cn) => ({
-          id: cn.careNeed.id,
-          name: cn.careNeed.name,
-        })) ?? [];
-  
-        const languages = user.individualProfile?.languagesRelation?.map((lang) => ({
-          id: lang.language.id,
-          name: lang.language.name,
-        })) ?? [];
-  
+        const careNeeds =
+          user.individualProfile?.careNeedsRelation?.map((cn) => ({
+            id: cn.careNeed.id,
+            name: cn.careNeed.name,
+          })) ?? [];
+
+        const languages =
+          user.individualProfile?.languagesRelation?.map((lang) => ({
+            id: lang.language.id,
+            name: lang.language.name,
+          })) ?? [];
+
         return {
           ...baseUser,
           careNeeds,
           languages,
         };
       });
-  
+
       const totalPages = Math.ceil(totalCount / limit);
-  
+
       return {
         users: transformedUsers,
         pagination: {
@@ -1276,12 +1270,12 @@ static async getIndividuals(
           disputeType: dispute.disputeType,
           title: dispute.title,
           status: dispute.status,
-          reportedBy: {
+          reportedByUser: {
             id: dispute.reportedByUser.id,
             name: dispute.reportedByUser.name || "Unknown",
             email: dispute.reportedByUser.email,
           },
-          reportedAgainst: {
+          reportedAgainstUser: {
             id: dispute.reportedAgainstUser.id,
             name: dispute.reportedAgainstUser.name || "Unknown",
             email: dispute.reportedAgainstUser.email,
