@@ -3,6 +3,7 @@ import { Router, Response } from "express";
 import { AuthenticatedRequest } from "../../middlewares/authMiddleware.js";
 import { requireAdminRole } from "../../middlewares/roleAuth.js";
 import { AdminService, UpdateDisputeStatusData } from "./adminService.js";
+import { DisputeFilters, DisputeService } from "../dispute/disputeService.js";
 
 const router = Router();
 
@@ -497,39 +498,39 @@ router.get(
 
 // Get all disputes
 router.get(
-  "/disputes",
+  "/admin/all",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { page = 1, limit = 20, status = "all", search = "" } = req.query;
+      const filters: DisputeFilters = {
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+        status: req.query.status as string,
+        disputeType: req.query.disputeType as string,
+      };
 
-      const result = await AdminService.getDisputes({
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-        status: status as string,
-        searchTerm: search as string,
-      });
+      const result = await DisputeService.getAllDisputes(filters);
 
       res.json({
         success: true,
-        data: result,
+        data: result.data,
+        pagination: result.pagination,
       });
       return;
     } catch (error) {
-      console.error("Error in get disputes route:", error);
+      console.error("Error in get all disputes route:", error);
       res.status(500).json({
         success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to fetch disputes",
+        error: "Failed to fetch disputes",
       });
       return;
     }
   }
 );
 
-// Update dispute status
+// Update dispute status (admin only)
 router.patch(
-  "/disputes/:disputeId/status",
+  "/:disputeId/status",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -563,7 +564,7 @@ router.patch(
         return;
       }
 
-      const updatedDispute = await AdminService.updateDisputeStatus(
+      const updatedDispute = await DisputeService.updateDisputeStatus(
         disputeId,
         adminId,
         statusData
@@ -600,36 +601,53 @@ router.patch(
   }
 );
 
-// Get dispute conversation
+// Get dispute statistics (admin only)
 router.get(
-  "/disputes/:disputeId/conversation",
+  "/admin/stats",
+  requireAdminRole,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const stats = await DisputeService.getDisputeStats();
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+      return;
+    } catch (error) {
+      console.error("Error in get dispute stats route:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch dispute statistics",
+      });
+      return;
+    }
+  }
+);
+
+// Get specific dispute details (admin view with full access)
+router.get(
+  "/admin/:disputeId",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { disputeId } = req.params;
       const adminId = req.user!.id;
 
-      const conversation = await AdminService.getDisputeConversation(
+      const dispute = await DisputeService.getDispute(
+        disputeId,
         adminId,
-        disputeId
+        "admin"
       );
 
       res.json({
         success: true,
-        data: conversation,
+        data: dispute,
       });
       return;
     } catch (error) {
-      console.error("Error in get dispute conversation route:", error);
-      if (error instanceof Error && error.message.includes("Access denied")) {
-        res.status(403).json({
-          success: false,
-          error: error.message,
-        });
-      } else if (
-        error instanceof Error &&
-        error.message === "Dispute not found"
-      ) {
+      console.error("Error in get dispute admin route:", error);
+      if (error instanceof Error && error.message === "Dispute not found") {
         res.status(404).json({
           success: false,
           error: error.message,
@@ -637,10 +655,7 @@ router.get(
       } else {
         res.status(500).json({
           success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to fetch dispute conversation",
+          error: "Failed to fetch dispute",
         });
       }
       return;
