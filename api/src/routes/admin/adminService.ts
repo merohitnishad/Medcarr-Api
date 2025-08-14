@@ -101,7 +101,7 @@ export class AdminService {
     limit?: number;
     role?: string;
     searchTerm?: string;
-  } = {}): Promise<{ requests: UserRequest[]; total: number; pagination: any }> {
+  } = {}): Promise<{ data: UserRequest[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, role, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -201,14 +201,17 @@ export class AdminService {
         profile: user.individualProfile || user.organizationProfile || user.healthcareProfile || null
       }));
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        requests: transformedRequests,
-        total: totalCount,
+        data: transformedRequests,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
@@ -340,7 +343,7 @@ export class AdminService {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; total: number; pagination: any }> {
+  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -429,14 +432,17 @@ export class AdminService {
         jobApplications: []
       }));
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        users: transformedUsers,
-        total: totalCount,
+        data: transformedUsers,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
@@ -450,7 +456,7 @@ export class AdminService {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; total: number; pagination: any }> {
+  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -530,14 +536,17 @@ export class AdminService {
         jobApplications: []
       }));
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        users: transformedUsers,
-        total: totalCount,
+        data: transformedUsers,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
@@ -551,7 +560,7 @@ export class AdminService {
     page?: number;
     limit?: number;
     searchTerm?: string;
-  } = {}): Promise<{ users: UserWithJobs[]; total: number; pagination: any }> {
+  } = {}): Promise<{ data: UserWithJobs[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -638,14 +647,17 @@ export class AdminService {
         jobApplications: user.healthcareApplications
       }));
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        users: transformedUsers,
-        total: totalCount,
+        data: transformedUsers,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
@@ -662,7 +674,7 @@ export class AdminService {
     limit?: number;
     status?: string;
     searchTerm?: string;
-  } = {}): Promise<{ disputes: DisputeListItem[]; total: number; pagination: any }> {
+  } = {}): Promise<{ data: DisputeListItem[]; pagination: any }> {
     try {
       const { page = 1, limit = 20, status, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -752,14 +764,17 @@ export class AdminService {
         } : undefined
       }));
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        disputes: transformedDisputes,
-        total: totalCount,
+        data: transformedDisputes,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
@@ -1022,7 +1037,7 @@ export class AdminService {
       isRead?: boolean;
       type?: string;
     } = {}
-  ): Promise<{ notifications: any[]; total: number; pagination: any }> {
+  ): Promise<{ data: any[]; pagination: any }> {
     try {
       // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
@@ -1086,14 +1101,17 @@ export class AdminService {
           .then(result => result[0].count)
       ]);
 
+      const totalPages = Math.ceil(totalCount / limit);
+
       return {
-        notifications: adminNotifications,
-        total: totalCount,
+        data: adminNotifications,
         pagination: {
           page,
           limit,
           total: totalCount,
-          pages: Math.ceil(totalCount / limit)
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         }
       };
     } catch (error) {
