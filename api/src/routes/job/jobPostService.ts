@@ -1569,22 +1569,22 @@ export class JobPostService {
       errors.push("Shift type must be either 'day' or 'night'");
     }
   
-    // Enhanced time validation based on shift type
+    // Enhanced time validation based on shift type (aligned with UI)
     if (data.startTime && data.endTime && data.shiftType) {
       const [startHour, startMinute] = data.startTime.split(":").map(Number);
       const [endHour, endMinute] = data.endTime.split(":").map(Number);
   
       if (data.shiftType === "day") {
-        // Day shift: 6 AM to 6 PM (06:00 - 18:00)
+        // Day shift: 6 AM to 11 PM (06:00 - 23:00)
         
-        // Validate start time is within day shift range (6 AM - 6 PM)
-        if (startHour < 6 || startHour >= 18) {
-          errors.push("Day shift start time must be between 06:00 and 18:00");
+        // Validate start time is within day shift range (6 AM - 11 PM)
+        if (startHour < 6 || startHour >= 23) {
+          errors.push("Day shift start time must be between 06:00 and 23:00");
         }
         
-        // Validate end time is within day shift range (6 AM - 6 PM)
-        if (endHour < 6 || endHour > 18 || (endHour === 18 && endMinute > 0)) {
-          errors.push("Day shift end time must be between 06:00 and 18:00");
+        // Validate end time is within day shift range (6 AM - 11 PM)
+        if (endHour < 6 || endHour > 23 || (endHour === 23 && endMinute > 0)) {
+          errors.push("Day shift end time must be between 06:00 and 23:00");
         }
         
         // For day shifts, end time must be after start time (same day)
@@ -1593,28 +1593,28 @@ export class JobPostService {
         }
         
       } else if (data.shiftType === "night") {
-        // Night shift: 6 PM to 6 AM (18:00 - 06:00 next day)
+        // Night shift: 7 PM to 6 AM (19:00 - 06:00 next day)
         
-        // Validate start time is within night shift range (6 PM - 6 AM)
-        // Night shift can start from 18:00 (6 PM) onwards OR from 00:00 to 06:00 (6 AM)
-        if (!(startHour >= 18 || startHour < 6)) {
-          errors.push("Night shift start time must be between 18:00 and 06:00");
+        // Validate start time is within night shift range (7 PM - 6 AM)
+        // Night shift can start from 19:00 (7 PM) onwards OR from 00:00 to 06:00 (6 AM)
+        if (!(startHour >= 19 || startHour < 6)) {
+          errors.push("Night shift start time must be between 19:00 and 06:00");
         }
         
         // Validate end time is within night shift range
-        // Night shift can end from 00:00 to 06:00 (6 AM) OR from 18:00 onwards
-        if (!(endHour < 6 || endHour >= 18)) {
-          errors.push("Night shift end time must be between 18:00 and 06:00");
+        // Night shift can end from 00:00 to 06:00 (6 AM) OR from 19:00 onwards
+        if (!(endHour < 6 || endHour >= 19)) {
+          errors.push("Night shift end time must be between 19:00 and 06:00");
         }
         
         // For night shifts, validate logical time progression
-        // Case 1: Start in evening (18:00-23:59), end in early morning (00:00-06:00)
+        // Case 1: Start in evening (19:00-23:59), end in early morning (00:00-06:00)
         // Case 2: Start in early morning (00:00-05:59), end later in early morning (same or later time before 06:00)
-        // Case 3: Start in evening, end later in evening (both >= 18:00)
+        // Case 3: Start in evening, end later in evening (both >= 19:00)
         
-        if (startHour >= 18) {
-          // Starting in evening (18:00-23:59)
-          if (endHour >= 18) {
+        if (startHour >= 19) {
+          // Starting in evening (19:00-23:59)
+          if (endHour >= 19) {
             // Ending same evening - must be after start time
             if (startHour > endHour || (startHour === endHour && startMinute >= endMinute)) {
               errors.push("For night shifts starting in evening, end time must be later than start time");
@@ -1628,22 +1628,13 @@ export class JobPostService {
             if (startHour > endHour || (startHour === endHour && startMinute >= endMinute)) {
               errors.push("For night shifts in early morning, end time must be after start time");
             }
-          } else if (endHour >= 18) {
+          } else if (endHour >= 19) {
             // Starting early morning, ending evening - this doesn't make sense for a night shift
             errors.push("Invalid night shift: cannot start in early morning and end in evening");
           }
         }
       }
     }
-  
-    // Legacy validation (kept for backward compatibility, but should be covered by above)
-    // Remove this if the above validation is comprehensive enough
-    // else if (data.startTime && data.endTime && !data.shiftType) {
-    //   // Default validation when shift type is not specified
-    //   if (data.startTime >= data.endTime) {
-    //     errors.push("End time must be after start time");
-    //   }
-    // }
   
     return errors;
   }
