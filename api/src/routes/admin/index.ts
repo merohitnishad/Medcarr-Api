@@ -498,7 +498,7 @@ router.get(
 
 // Get all disputes
 router.get(
-  "/admin/all",
+  "/dispute/all",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -530,7 +530,7 @@ router.get(
 
 // Update dispute status (admin only)
 router.patch(
-  "/:disputeId/status",
+  "/dispute/:disputeId/status",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -603,7 +603,7 @@ router.patch(
 
 // Get dispute statistics (admin only)
 router.get(
-  "/admin/stats",
+  "/dispute/stats",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -627,7 +627,7 @@ router.get(
 
 // Get specific dispute details (admin view with full access)
 router.get(
-  "/admin/:disputeId",
+  "/dispute/:disputeId",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
