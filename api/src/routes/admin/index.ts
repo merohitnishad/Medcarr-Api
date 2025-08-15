@@ -228,12 +228,27 @@ router.get(
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { page = 1, limit = 20, search = "" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        isActive,
+        createdAt,
+        postcode,
+      } = req.query;
+
+      // Parse isActive parameter
+      let isActiveFilter = undefined;
+      if (isActive === "true") isActiveFilter = true;
+      if (isActive === "false") isActiveFilter = false;
 
       const result = await AdminService.getIndividuals({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         searchTerm: search as string,
+        isActive: isActiveFilter,
+        createdAt: createdAt as string,
+        postcode: postcode as string,
       });
 
       res.json({
@@ -255,18 +270,33 @@ router.get(
   }
 );
 
-// Get organizations with job details
+// Get organizations with job details - ADD FILTERS
 router.get(
   "/users/organizations",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { page = 1, limit = 20, search = "" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        isActive,
+        createdAt,
+        postcode,
+      } = req.query;
+
+      // Parse isActive parameter
+      let isActiveFilter = undefined;
+      if (isActive === "true") isActiveFilter = true;
+      if (isActive === "false") isActiveFilter = false;
 
       const result = await AdminService.getOrganizations({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         searchTerm: search as string,
+        isActive: isActiveFilter,
+        createdAt: createdAt as string,
+        postcode: postcode as string,
       });
 
       res.json({
@@ -288,18 +318,33 @@ router.get(
   }
 );
 
-// Get healthcare providers with job applications
+// Get healthcare providers with job applications - ADD FILTERS
 router.get(
   "/users/healthcare",
   requireAdminRole,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { page = 1, limit = 20, search = "" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        isActive,
+        createdAt,
+        postcode,
+      } = req.query;
+
+      // Parse isActive parameter
+      let isActiveFilter = undefined;
+      if (isActive === "true") isActiveFilter = true;
+      if (isActive === "false") isActiveFilter = false;
 
       const result = await AdminService.getHealthcareProviders({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         searchTerm: search as string,
+        isActive: isActiveFilter,
+        createdAt: createdAt as string,
+        postcode: postcode as string,
       });
 
       res.json({
@@ -330,13 +375,24 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const adminId = req.user!.id;
-      const { page = 1, limit = 20, status = "all", search = "" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        status = "all",
+        search = "",
+        postcode,
+        createdAt,
+        shiftType,
+      } = req.query;
 
       const result = await AdminService.getAllJobsWithApplicants(adminId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         status: status as string,
         searchTerm: search as string,
+        postcode: postcode as string,
+        createdAt: createdAt as string,
+        shiftType: shiftType as string,
       });
 
       res.json({
@@ -363,7 +419,7 @@ router.get(
   }
 );
 
-// Get jobs for specific job poster
+// Get jobs for specific job poster - ADD FILTERS
 router.get(
   "/jobs/job-poster/:userId",
   requireAdminRole,
@@ -371,12 +427,22 @@ router.get(
     try {
       const { userId } = req.params;
       const adminId = req.user!.id;
-      const { page = 1, limit = 20, status = "all" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        status = "all",
+        postcode,
+        createdAt,
+        shiftType,
+      } = req.query;
 
       const result = await AdminService.getJobsForJobPoster(adminId, userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         status: status as string,
+        postcode: postcode as string,
+        createdAt: createdAt as string,
+        shiftType: shiftType as string,
       });
 
       res.json({
@@ -405,7 +471,7 @@ router.get(
   }
 );
 
-// Get applied jobs for specific healthcare provider
+// Get applied jobs for specific healthcare provider - ADD FILTERS
 router.get(
   "/jobs/healthcare/:userId/applications",
   requireAdminRole,
@@ -413,7 +479,14 @@ router.get(
     try {
       const { userId } = req.params;
       const adminId = req.user!.id;
-      const { page = 1, limit = 20, status = "all" } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        status = "all",
+        postcode,
+        createdAt,
+        shiftType,
+      } = req.query;
 
       const result = await AdminService.getAppliedJobsForHealthcare(
         adminId,
@@ -422,6 +495,9 @@ router.get(
           page: parseInt(page as string),
           limit: parseInt(limit as string),
           status: status as string,
+          postcode: postcode as string,
+          createdAt: createdAt as string,
+          shiftType: shiftType as string,
         }
       );
 

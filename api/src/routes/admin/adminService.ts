@@ -93,10 +93,30 @@ export interface UserWithJobs {
   profileCompleted: boolean;
   profileVerified: boolean;
   dbsVerified: boolean;
+  isActive: boolean;
   createdAt: Date;
   profile?: any;
   jobPosts?: any[];
   jobApplications?: any[];
+}
+
+export interface UserFilters {
+  page?: number;
+  limit?: number;
+  searchTerm?: string;
+  isActive?: boolean;
+  createdAt?: string; // Date filter
+  postcode?: string;
+}
+
+export interface JobFilters {
+  page?: number;
+  limit?: number;
+  status?: string;
+  searchTerm?: string;
+  postcode?: string;
+  createdAt?: string; // Date filter
+  shiftType?: string;
 }
 
 export class AdminService {
@@ -385,23 +405,42 @@ export class AdminService {
   // Get individuals with job details
 
   static async getIndividuals(
-    options: {
-      page?: number;
-      limit?: number;
-      searchTerm?: string;
-    } = {}
+    options: UserFilters = {}
   ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
-      const { page = 1, limit = 20, searchTerm } = options;
+      const {
+        page = 1,
+        limit = 20,
+        searchTerm,
+        isActive,
+        createdAt,
+        postcode,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [
         eq(users.role, "individual"),
-        eq(users.isActive, true),
         eq(users.isDeleted, false),
       ];
 
-      // ADD SEARCH FUNCTIONALITY
+      // ADD NEW FILTERS
+      if (isActive !== undefined) {
+        whereConditions.push(eq(users.isActive, isActive));
+      } else {
+        whereConditions.push(eq(users.isActive, true)); // Default behavior
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(users.createdAt, dayStart));
+        whereConditions.push(lte(users.createdAt, dayEnd));
+      }
+
       //   if (searchTerm) {
       //     whereConditions.push(
       //       or(
@@ -411,45 +450,52 @@ export class AdminService {
       //     );
       //   }
 
-      const [individuals, totalCount] = await Promise.all([
-        db.query.users.findMany({
-          where: and(...whereConditions),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            profileCompleted: true,
-            profileVerified: true,
-            dbsVerified: true,
-            createdAt: true,
-            cognitoId: false,
-          },
-          with: {
-            individualProfile: {
-              with: {
-                careNeedsRelation: {
-                  with: { careNeed: true },
-                },
-                languagesRelation: {
-                  with: { language: true },
-                },
-              },
+      // Add postcode filter for individualProfile
+      if (postcode) {
+        whereConditions.push(eq(individualProfiles.postcode, postcode)); // Default behavior
+      }
+
+      // Get results with postcode filtering
+      let individuals = await db.query.users.findMany({
+        where: and(...whereConditions),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          profileCompleted: true,
+          profileVerified: true,
+          dbsVerified: true,
+          isActive: true,
+          createdAt: true,
+          cognitoId: false,
+        },
+        with: {
+          individualProfile: {
+            with: {
+              careNeedsRelation: { with: { careNeed: true } },
+              languagesRelation: { with: { language: true } },
             },
           },
-          limit,
-          offset,
-          orderBy: [desc(users.createdAt)],
-        }),
-        db
-          .select({ count: count() })
-          .from(users)
-          .where(and(...whereConditions))
-          .then((result) => result[0].count),
-      ]);
+        },
+        orderBy: [desc(users.createdAt)],
+      });
 
-      const transformedUsers: UserWithJobs[] = individuals.map((user) => {
-        // Create a base user object
+      // Filter by postcode if provided
+      if (postcode) {
+        individuals = individuals.filter((user) =>
+          user.individualProfile?.postcode
+            ?.toLowerCase()
+            .includes(postcode.toLowerCase())
+        );
+      }
+
+      // Apply pagination after filtering
+      const filteredTotal = individuals.length;
+      const paginatedResults = individuals.slice(offset, offset + limit);
+
+      // Transform results
+      const transformedUsers: UserWithJobs[] = paginatedResults.map((user) => {
         const baseUser: UserWithJobs = {
           id: user.id,
           email: user.email,
@@ -458,16 +504,14 @@ export class AdminService {
           profileCompleted: user.profileCompleted,
           profileVerified: user.profileVerified,
           dbsVerified: user.dbsVerified,
+          isActive: user.isActive,
           createdAt: user.createdAt,
           profile: null,
         };
 
-        // Transform individual profile if it exists
         if (user.individualProfile) {
           const { careNeedsRelation, languagesRelation, ...restProfile } =
             user.individualProfile;
-
-          // Create the transformed profile with additional computed properties
           const transformedProfile = {
             ...restProfile,
             careNeeds: (careNeedsRelation ?? []).map((cn) => ({
@@ -479,38 +523,20 @@ export class AdminService {
               name: lang.language.name,
             })),
           };
-
           baseUser.profile = transformedProfile;
         }
 
-        // Add careNeeds and languages at the top level for backward compatibility
-        const careNeeds =
-          user.individualProfile?.careNeedsRelation?.map((cn) => ({
-            id: cn.careNeed.id,
-            name: cn.careNeed.name,
-          })) ?? [];
-
-        const languages =
-          user.individualProfile?.languagesRelation?.map((lang) => ({
-            id: lang.language.id,
-            name: lang.language.name,
-          })) ?? [];
-
-        return {
-          ...baseUser,
-          careNeeds,
-          languages,
-        };
+        return baseUser;
       });
 
-      const totalPages = Math.ceil(totalCount / limit);
+      const totalPages = Math.ceil(filteredTotal / limit);
 
       return {
         users: transformedUsers,
         pagination: {
           page,
           limit,
-          total: totalCount,
+          total: filteredTotal,
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
@@ -522,25 +548,44 @@ export class AdminService {
     }
   }
 
-  // Modified: Get organizations - ONLY profile details, no jobs
+  // Modify getOrganizations method
   static async getOrganizations(
-    options: {
-      page?: number;
-      limit?: number;
-      searchTerm?: string;
-    } = {}
+    options: UserFilters = {}
   ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
-      const { page = 1, limit = 20, searchTerm } = options;
+      const {
+        page = 1,
+        limit = 20,
+        searchTerm,
+        isActive,
+        createdAt,
+        postcode,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [
         eq(users.role, "organization"),
-        eq(users.isActive, true),
         eq(users.isDeleted, false),
       ];
 
-      // ADD SEARCH FUNCTIONALITY
+      // ADD NEW FILTERS
+      if (isActive !== undefined) {
+        whereConditions.push(eq(users.isActive, isActive));
+      } else {
+        whereConditions.push(eq(users.isActive, true)); // Default behavior
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(users.createdAt, dayStart));
+        whereConditions.push(lte(users.createdAt, dayEnd));
+      }
+
       //   if (searchTerm) {
       //     whereConditions.push(
       //       or(
@@ -550,36 +595,37 @@ export class AdminService {
       //     );
       //   }
 
-      const [organizations, totalCount] = await Promise.all([
-        db.query.users.findMany({
-          where: and(...whereConditions),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            profileCompleted: true,
-            profileVerified: true,
-            dbsVerified: true,
-            createdAt: true,
-            cognitoId: false,
-          },
-          with: {
-            organizationProfile: true,
-            // REMOVED: jobPosts - no longer included
-          },
-          limit,
-          offset,
-          orderBy: [desc(users.createdAt)],
-        }),
-        db
-          .select({ count: count() })
-          .from(users)
-          .where(and(...whereConditions))
-          .then((result) => result[0].count),
-      ]);
+      // Filter by postcode if provided
+      if (postcode) {
+        whereConditions.push(eq(organizationProfiles.postcode, postcode));
+      }
 
-      const transformedUsers: UserWithJobs[] = organizations.map((user) => ({
+      // Get results
+      let organizations = await db.query.users.findMany({
+        where: and(...whereConditions),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          profileCompleted: true,
+          profileVerified: true,
+          dbsVerified: true,
+          isActive: true,
+          createdAt: true,
+          cognitoId: false,
+        },
+        with: {
+          organizationProfile: true,
+        },
+        orderBy: [desc(users.createdAt)],
+      });
+
+      // Apply pagination after filtering
+      const filteredTotal = organizations.length;
+      const paginatedResults = organizations.slice(offset, offset + limit);
+
+      const transformedUsers: UserWithJobs[] = paginatedResults.map((user) => ({
         id: user.id,
         email: user.email,
         name: user.name || undefined,
@@ -587,19 +633,19 @@ export class AdminService {
         profileCompleted: user.profileCompleted,
         profileVerified: user.profileVerified,
         dbsVerified: user.dbsVerified,
+        isActive: user.isActive,
         createdAt: user.createdAt,
         profile: user.organizationProfile,
-        // REMOVED: jobPosts and jobApplications
       }));
 
-      const totalPages = Math.ceil(totalCount / limit);
+      const totalPages = Math.ceil(filteredTotal / limit);
 
       return {
         users: transformedUsers,
         pagination: {
           page,
           limit,
-          total: totalCount,
+          total: filteredTotal,
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
@@ -611,26 +657,44 @@ export class AdminService {
     }
   }
 
-  // Modified: Get healthcare providers - ONLY profile details, no applications
-  // Fixed getHealthcareProviders method
+  // Modify getHealthcareProviders method
   static async getHealthcareProviders(
-    options: {
-      page?: number;
-      limit?: number;
-      searchTerm?: string;
-    } = {}
+    options: UserFilters = {}
   ): Promise<{ users: UserWithJobs[]; pagination: any }> {
     try {
-      const { page = 1, limit = 20, searchTerm } = options;
+      const {
+        page = 1,
+        limit = 20,
+        searchTerm,
+        isActive,
+        createdAt,
+        postcode,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [
         eq(users.role, "healthcare"),
-        eq(users.isActive, true),
         eq(users.isDeleted, false),
       ];
 
-      // ADD SEARCH FUNCTIONALITY
+      // ADD NEW FILTERS
+      if (isActive !== undefined) {
+        whereConditions.push(eq(users.isActive, isActive));
+      } else {
+        whereConditions.push(eq(users.isActive, true)); // Default behavior
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(users.createdAt, dayStart));
+        whereConditions.push(lte(users.createdAt, dayEnd));
+      }
+
       //   if (searchTerm) {
       //     whereConditions.push(
       //       or(
@@ -640,46 +704,46 @@ export class AdminService {
       //     );
       //   }
 
-      const [healthcareProviders, totalCount] = await Promise.all([
-        db.query.users.findMany({
-          where: and(...whereConditions),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            profileCompleted: true,
-            profileVerified: true,
-            dbsVerified: true,
-            createdAt: true,
-            cognitoId: false,
-          },
-          with: {
-            healthcareProfile: {
-              with: {
-                specialitiesRelation: {
-                  with: { speciality: true },
-                },
-                languagesRelation: {
-                  with: { language: true },
-                },
-              },
+      // Filter by postcode if provided
+      if (postcode) {
+        whereConditions.push(eq(healthcareProfiles.postcode, postcode));
+      }
+
+      // Get results
+      let healthcareProviders = await db.query.users.findMany({
+        where: and(...whereConditions),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          profileCompleted: true,
+          profileVerified: true,
+          dbsVerified: true,
+          isActive: true,
+          createdAt: true,
+          cognitoId: false,
+        },
+        with: {
+          healthcareProfile: {
+            with: {
+              specialitiesRelation: { with: { speciality: true } },
+              languagesRelation: { with: { language: true } },
             },
           },
-          limit,
-          offset,
-          orderBy: [desc(users.createdAt)],
-        }),
-        db
-          .select({ count: count() })
-          .from(users)
-          .where(and(...whereConditions))
-          .then((result) => result[0].count),
-      ]);
+        },
+        orderBy: [desc(users.createdAt)],
+      });
+
+      // Apply pagination after filtering
+      const filteredTotal = healthcareProviders.length;
+      const paginatedResults = healthcareProviders.slice(
+        offset,
+        offset + limit
+      );
 
       const transformedUsers: UserWithJobs[] = await Promise.all(
-        healthcareProviders.map(async (user) => {
-          // Create a base user object
+        paginatedResults.map(async (user) => {
           const baseUser: UserWithJobs = {
             id: user.id,
             email: user.email,
@@ -688,25 +752,16 @@ export class AdminService {
             profileCompleted: user.profileCompleted,
             profileVerified: user.profileVerified,
             dbsVerified: user.dbsVerified,
+            isActive: user.isActive,
             createdAt: user.createdAt,
             profile: null,
           };
 
-          // Transform healthcare profile if it exists
           if (user.healthcareProfile) {
-            const {
-              specialitiesRelation,
-              languagesRelation,
-              image: imageRaw,
-              preferredTime: preferredTimeRaw,
-              experience: experienceRaw,
-              ...restProfile
-            } = user.healthcareProfile;
-
-            // Create the transformed profile with additional computed properties
+            const { specialitiesRelation, languagesRelation, ...restProfile } =
+              user.healthcareProfile;
             const transformedProfile = {
               ...restProfile,
-              // Add the transformed specialities and languages as separate properties
               specialities: (specialitiesRelation ?? []).map((sp) => ({
                 id: sp.speciality.id,
                 name: sp.speciality.name,
@@ -717,7 +772,6 @@ export class AdminService {
               })),
             };
 
-            // Add review stats
             try {
               const reviewStats = await ReviewService.getReviewStats(user.id);
               (transformedProfile as any).reviewStats = reviewStats;
@@ -726,41 +780,23 @@ export class AdminService {
                 `Failed to fetch review stats for user ${user.id}:`,
                 error
               );
-              // Continue without review stats rather than failing
             }
 
             baseUser.profile = transformedProfile;
           }
 
-          // Add specialities and languages at the top level for backward compatibility
-          const specialities =
-            user.healthcareProfile?.specialitiesRelation?.map((sp) => ({
-              id: sp.speciality.id,
-              name: sp.speciality.name,
-            })) ?? [];
-
-          const languages =
-            user.healthcareProfile?.languagesRelation?.map((lang) => ({
-              id: lang.language.id,
-              name: lang.language.name,
-            })) ?? [];
-
-          return {
-            ...baseUser,
-            specialities,
-            languages,
-          };
+          return baseUser;
         })
       );
 
-      const totalPages = Math.ceil(totalCount / limit);
+      const totalPages = Math.ceil(filteredTotal / limit);
 
       return {
         users: transformedUsers,
         pagination: {
           page,
           limit,
-          total: totalCount,
+          total: filteredTotal,
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
@@ -777,27 +813,49 @@ export class AdminService {
   // NEW: Get all jobs with applicants (admin view of all platform jobs)
   static async getAllJobsWithApplicants(
     adminId: string,
-    options: {
-      page?: number;
-      limit?: number;
-      status?: string;
-      searchTerm?: string;
-    } = {}
+    options: JobFilters = {}
   ): Promise<{ jobs: any[]; pagination: any }> {
     try {
-      // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
       if (!isAdmin) {
         throw new Error("Access denied: Admin role required");
       }
 
-      const { page = 1, limit = 20, status, searchTerm } = options;
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        searchTerm,
+        postcode,
+        createdAt,
+        shiftType,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [eq(jobPosts.isDeleted, false)];
 
       if (status && status !== "all") {
         whereConditions.push(eq(jobPosts.status, status as any));
+      }
+
+      // ADD NEW FILTERS
+      if (postcode) {
+        whereConditions.push(like(jobPosts.postcode, `%${postcode}%`));
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(jobPosts.createdAt, dayStart));
+        whereConditions.push(lte(jobPosts.createdAt, dayEnd));
+      }
+
+      if (shiftType && shiftType !== "all") {
+        whereConditions.push(eq(jobPosts.shiftType, shiftType as any));
       }
 
       //   if (searchTerm) {
@@ -814,12 +872,7 @@ export class AdminService {
           where: and(...whereConditions),
           with: {
             user: {
-              columns: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-              },
+              columns: { id: true, name: true, email: true, role: true },
             },
             careNeedsRelation: { with: { careNeed: true } },
             languagesRelation: { with: { language: true } },
@@ -827,11 +880,7 @@ export class AdminService {
             completedApplication: {
               with: {
                 healthcareUser: {
-                  columns: {
-                    id: true,
-                    name: true,
-                    email: true,
-                  },
+                  columns: { id: true, name: true, email: true },
                 },
               },
             },
@@ -847,7 +896,7 @@ export class AdminService {
           .then((result) => result[0].count),
       ]);
 
-      // Get applicant counts for all jobs
+      // Get applicant counts
       const jobIds = allJobs.map((job) => job.id);
       let applicantCountMap = new Map<string, number>();
 
@@ -898,24 +947,26 @@ export class AdminService {
     }
   }
 
-  // NEW: Get jobs for specific job poster (individual/organization)
+  // Modify getJobsForJobPoster method
   static async getJobsForJobPoster(
     adminId: string,
     jobPosterId: string,
-    options: {
-      page?: number;
-      limit?: number;
-      status?: string;
-    } = {}
+    options: JobFilters = {}
   ): Promise<{ jobs: any[]; pagination: any }> {
     try {
-      // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
       if (!isAdmin) {
         throw new Error("Access denied: Admin role required");
       }
 
-      const { page = 1, limit = 20, status } = options;
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        postcode,
+        createdAt,
+        shiftType,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [
@@ -927,17 +978,33 @@ export class AdminService {
         whereConditions.push(eq(jobPosts.status, status as any));
       }
 
+      // ADD NEW FILTERS
+      if (postcode) {
+        whereConditions.push(like(jobPosts.postcode, `%${postcode}%`));
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(jobPosts.createdAt, dayStart));
+        whereConditions.push(lte(jobPosts.createdAt, dayEnd));
+      }
+
+      if (shiftType && shiftType !== "all") {
+        whereConditions.push(eq(jobPosts.shiftType, shiftType as any));
+      }
+
+      // Rest of the method remains the same...
       const [userJobs, totalCount] = await Promise.all([
         db.query.jobPosts.findMany({
           where: and(...whereConditions),
           with: {
             user: {
-              columns: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-              },
+              columns: { id: true, name: true, email: true, role: true },
             },
             careNeedsRelation: { with: { careNeed: true } },
             languagesRelation: { with: { language: true } },
@@ -945,14 +1012,8 @@ export class AdminService {
             completedApplication: {
               with: {
                 healthcareUser: {
-                  columns: {
-                    id: true,
-                    name: true,
-                    email: true,
-                  },
-                  with: {
-                    healthcareProfile: true,
-                  },
+                  columns: { id: true, name: true, email: true },
+                  with: { healthcareProfile: true },
                 },
               },
             },
@@ -1045,24 +1106,26 @@ export class AdminService {
     }
   }
 
-  // NEW: Get applied jobs for specific healthcare provider
+  // Modify getAppliedJobsForHealthcare method
   static async getAppliedJobsForHealthcare(
     adminId: string,
     healthcareUserId: string,
-    options: {
-      page?: number;
-      limit?: number;
-      status?: string;
-    } = {}
+    options: JobFilters = {}
   ): Promise<{ applications: any[]; pagination: any }> {
     try {
-      // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
       if (!isAdmin) {
         throw new Error("Access denied: Admin role required");
       }
 
-      const { page = 1, limit = 20, status } = options;
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        postcode,
+        createdAt,
+        shiftType,
+      } = options;
       const offset = (page - 1) * limit;
 
       const whereConditions = [
@@ -1074,55 +1137,66 @@ export class AdminService {
         whereConditions.push(eq(jobApplications.status, status as any));
       }
 
-      const [applications, totalCount] = await Promise.all([
-        db.query.jobApplications.findMany({
-          where: and(...whereConditions),
-          with: {
-            jobPost: {
-              with: {
-                user: {
-                  columns: {
-                    id: true,
-                    name: true,
-                    email: true,
-                    role: true,
-                  },
-                },
-                careNeedsRelation: { with: { careNeed: true } },
-                languagesRelation: { with: { language: true } },
-                preferencesRelation: { with: { preference: true } },
+      // Get all applications first, then filter by job properties
+      let applications = await db.query.jobApplications.findMany({
+        where: and(...whereConditions),
+        with: {
+          jobPost: {
+            with: {
+              user: {
+                columns: { id: true, name: true, email: true, role: true },
               },
-            },
-            healthcareUser: {
-              columns: {
-                id: true,
-                name: true,
-                email: true,
-              },
-              with: {
-                healthcareProfile: true,
-              },
+              careNeedsRelation: { with: { careNeed: true } },
+              languagesRelation: { with: { language: true } },
+              preferencesRelation: { with: { preference: true } },
             },
           },
-          limit,
-          offset,
-          orderBy: [desc(jobApplications.createdAt)],
-        }),
-        db
-          .select({ count: count() })
-          .from(jobApplications)
-          .where(and(...whereConditions))
-          .then((result) => result[0].count),
-      ]);
+          healthcareUser: {
+            columns: { id: true, name: true, email: true },
+            with: { healthcareProfile: true },
+          },
+        },
+        orderBy: [desc(jobApplications.createdAt)],
+      });
 
-      const totalPages = Math.ceil(totalCount / limit);
+      // Filter by job properties
+      if (postcode) {
+        applications = applications.filter((app) =>
+          app.jobPost.postcode.toLowerCase().includes(postcode.toLowerCase())
+        );
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        applications = applications.filter((app) => {
+          const appCreatedAt = new Date(app.jobPost.createdAt);
+          return appCreatedAt >= dayStart && appCreatedAt <= dayEnd;
+        });
+      }
+
+      if (shiftType && shiftType !== "all") {
+        applications = applications.filter(
+          (app) => app.jobPost.shiftType === shiftType
+        );
+      }
+
+      // Apply pagination
+      const filteredTotal = applications.length;
+      const paginatedResults = applications.slice(offset, offset + limit);
+
+      const totalPages = Math.ceil(filteredTotal / limit);
 
       return {
-        applications,
+        applications: paginatedResults,
         pagination: {
           page,
           limit,
-          total: totalCount,
+          total: filteredTotal,
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
