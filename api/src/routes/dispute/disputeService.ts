@@ -144,37 +144,40 @@ export class DisputeService {
         })
         .returning();
 
-
       // Create notification for admins (you might want to implement admin notification logic)
       try {
         // Find first admin user
         const adminUser = await tx.query.users.findFirst({
           where: eq(users.role, "admin"),
-          columns: { id: true }
+          columns: { id: true },
         });
-      
+
         if (adminUser) {
+          // In disputeService.ts - Fix the createFromTemplate call
           await NotificationService.createFromTemplate(
             "DISPUTE_CREATED",
-            adminUser.id, // Use the found admin user ID
+            adminUser.id, // This is correct - it's the userId parameter
             {
               disputeNumber: dispute.disputeNumber,
               jobTitle: jobPost.title,
               reporterName: data.reportedBy,
             },
             {
-              disputeId: dispute.id,
+              disputeId: dispute.id, // This should work now
               jobPostId: data.jobPostId,
               relatedUserId: data.reportedBy,
               sendEmail: true,
               metadata: {
                 disputeType: data.disputeType,
-              }
+              },
             }
           );
         }
       } catch (notificationError) {
-        console.error("Failed to create admin notification:", notificationError);
+        console.error(
+          "Failed to create admin notification:",
+          notificationError
+        );
         // Continue without failing the dispute creation
       }
 

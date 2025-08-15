@@ -127,27 +127,6 @@
       "when": 1755075819203,
       "tag": "0017_dusty_blizzard",
       "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1755252678206,
-      "tag": "0018_mean_la_nuit",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1755253286019,
-      "tag": "0019_elite_patriot",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1755253309758,
-      "tag": "0020_tan_patriot",
-      "breakpoints": true
     }
   ]
 }
