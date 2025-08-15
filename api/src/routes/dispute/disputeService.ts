@@ -1,9 +1,6 @@
 // services/disputeService.ts
 import { db } from "../../db/index.js";
-import {
-  disputes,
-  disputeDocuments,
-} from "../../db/schemas/disputeSchema.js";
+import { disputes, disputeDocuments } from "../../db/schemas/disputeSchema.js";
 import { jobPosts } from "../../db/schemas/jobSchema.js";
 import { users } from "../../db/schemas/usersSchema.js";
 import { eq, and, desc, count, or, inArray, gte, lte } from "drizzle-orm";
@@ -32,7 +29,7 @@ export interface DisputeFilters {
   status?: string;
   disputeType?: string;
   userId?: string;
-  submittedDate?: string;  
+  submittedDate?: string;
 }
 
 export interface DisputeDocumentUpload {
@@ -44,15 +41,16 @@ export interface DisputeDocumentUpload {
 }
 
 export class DisputeService {
-  
   // Generate unique dispute number
   private static generateDisputeNumber(): string {
     const date = new Date();
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
-    
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const random = Math.floor(Math.random() * 9999)
+      .toString()
+      .padStart(4, "0");
+
     return `DSP-${year}${month}${day}-${random}`;
   }
 
@@ -68,8 +66,8 @@ export class DisputeService {
         with: {
           user: {
             columns: { id: true, name: true, role: true },
-          }
-        }
+          },
+        },
       });
 
       if (!jobPost) {
@@ -79,15 +77,17 @@ export class DisputeService {
       // Validate that reporter is involved in the job
       const isJobPoster = jobPost.userId === data.reportedBy;
       const isHealthcareWorker = jobPost.userId === data.reportedAgainst;
-      
+
       if (!isJobPoster && !isHealthcareWorker) {
-        throw new Error("You can only report disputes for jobs you are involved in");
+        throw new Error(
+          "You can only report disputes for jobs you are involved in"
+        );
       }
 
       // Validate that reported against user exists
       const reportedAgainstUser = await tx.query.users.findFirst({
         where: eq(users.id, data.reportedAgainst),
-        columns: { id: true, name: true, role: true }
+        columns: { id: true, name: true, role: true },
       });
 
       if (!reportedAgainstUser) {
@@ -102,22 +102,24 @@ export class DisputeService {
           eq(disputes.reportedAgainst, data.reportedAgainst),
           eq(disputes.status, "open"),
           eq(disputes.isDeleted, false)
-        )
+        ),
       });
 
       if (existingDispute) {
-        throw new Error("You already have an open dispute against this user for this job");
+        throw new Error(
+          "You already have an open dispute against this user for this job"
+        );
       }
 
       // Generate unique dispute number
       let disputeNumber: string;
       let isUnique = false;
       let attempts = 0;
-      
+
       do {
         disputeNumber = this.generateDisputeNumber();
         const existing = await tx.query.disputes.findFirst({
-          where: eq(disputes.disputeNumber, disputeNumber)
+          where: eq(disputes.disputeNumber, disputeNumber),
         });
         isUnique = !existing;
         attempts++;
@@ -142,30 +144,39 @@ export class DisputeService {
         })
         .returning();
 
+
       // Create notification for admins (you might want to implement admin notification logic)
-    //   try {
-    //     await NotificationService.createFromTemplate(
-    //       "DISPUTE_CREATED",
-    //       "admin-user-id", // Replace with actual admin user ID or implement admin notification system
-    //       {
-    //         disputeNumber: dispute.disputeNumber,
-    //         jobTitle: jobPost.title,
-    //         reporterName: data.reportedBy,
-    //       },
-    //       {
-    //         disputeId: dispute.id,
-    //         jobPostId: data.jobPostId,
-    //         relatedUserId: data.reportedBy,
-    //         sendEmail: true,
-    //         metadata: {
-    //           disputeType: data.disputeType,
-    //         }
-    //       }
-    //     );
-    //   } catch (notificationError) {
-    //     console.error("Failed to create admin notification:", notificationError);
-    //     // Continue without failing the dispute creation
-    //   }
+      try {
+        // Find first admin user
+        const adminUser = await tx.query.users.findFirst({
+          where: eq(users.role, "admin"),
+          columns: { id: true }
+        });
+      
+        if (adminUser) {
+          await NotificationService.createFromTemplate(
+            "DISPUTE_CREATED",
+            adminUser.id, // Use the found admin user ID
+            {
+              disputeNumber: dispute.disputeNumber,
+              jobTitle: jobPost.title,
+              reporterName: data.reportedBy,
+            },
+            {
+              disputeId: dispute.id,
+              jobPostId: data.jobPostId,
+              relatedUserId: data.reportedBy,
+              sendEmail: true,
+              metadata: {
+                disputeType: data.disputeType,
+              }
+            }
+          );
+        }
+      } catch (notificationError) {
+        console.error("Failed to create admin notification:", notificationError);
+        // Continue without failing the dispute creation
+      }
 
       return dispute;
     });
@@ -174,10 +185,7 @@ export class DisputeService {
   // Get dispute by ID with access control
   static async getDispute(disputeId: string, userId: string, userRole: string) {
     const dispute = await db.query.disputes.findFirst({
-      where: and(
-        eq(disputes.id, disputeId),
-        eq(disputes.isDeleted, false)
-      ),
+      where: and(eq(disputes.id, disputeId), eq(disputes.isDeleted, false)),
       with: {
         jobPost: {
           columns: {
@@ -185,26 +193,26 @@ export class DisputeService {
             title: true,
             jobDate: true,
             address: true,
-          }
+          },
         },
         reportedByUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         reportedAgainstUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         assignedAdmin: {
-          columns: { id: true, name: true }
+          columns: { id: true, name: true },
         },
         documents: {
           where: eq(disputeDocuments.isDeleted, false),
           with: {
             uploadedByUser: {
-              columns: { id: true, name: true }
-            }
-          }
-        }
-      }
+              columns: { id: true, name: true },
+            },
+          },
+        },
+      },
     });
 
     if (!dispute) {
@@ -212,7 +220,7 @@ export class DisputeService {
     }
 
     // Access control: only involved parties and admins can view
-    const hasAccess = 
+    const hasAccess =
       dispute.reportedBy === userId ||
       dispute.reportedAgainst === userId ||
       userRole === "admin";
@@ -226,15 +234,21 @@ export class DisputeService {
 
   // Get user's disputes (for dashboard)
   static async getUserDisputes(userId: string, filters: DisputeFilters = {}) {
-    const { page = 1, limit = 10, status, disputeType, submittedDate} = filters;
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      disputeType,
+      submittedDate,
+    } = filters;
     const offset = (page - 1) * limit;
 
     const conditions = [
       or(
-        eq(disputes.reportedBy, userId),
+        eq(disputes.reportedBy, userId)
         // eq(disputes.reportedAgainst, userId)
       ),
-      eq(disputes.isDeleted, false)
+      eq(disputes.isDeleted, false),
     ];
 
     if (status) {
@@ -246,17 +260,17 @@ export class DisputeService {
     }
 
     if (submittedDate) {
-        const filterDate = new Date(submittedDate);
-        const startOfDay = new Date(filterDate.setHours(0, 0, 0, 0));
-        const endOfDay = new Date(filterDate.setHours(23, 59, 59, 999));
-        conditions.push(
-          and(
-            gte(disputes.reportedAt, startOfDay),
-            lte(disputes.reportedAt, endOfDay)
-          )
-        );
-      }
-      
+      const filterDate = new Date(submittedDate);
+      const startOfDay = new Date(filterDate.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(filterDate.setHours(23, 59, 59, 999));
+      conditions.push(
+        and(
+          gte(disputes.reportedAt, startOfDay),
+          lte(disputes.reportedAt, endOfDay)
+        )
+      );
+    }
+
     const [totalCount] = await db
       .select({ count: count() })
       .from(disputes)
@@ -270,18 +284,18 @@ export class DisputeService {
             id: true,
             title: true,
             jobDate: true,
-          }
+          },
         },
         reportedByUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         reportedAgainstUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         documents: {
           where: eq(disputeDocuments.isDeleted, false),
-          columns: { id: true, fileName: true, uploadedAt: true }
-        }
+          columns: { id: true, fileName: true, uploadedAt: true },
+        },
       },
       orderBy: [desc(disputes.createdAt)],
       limit,
@@ -329,21 +343,21 @@ export class DisputeService {
             id: true,
             title: true,
             jobDate: true,
-          }
+          },
         },
         reportedByUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         reportedAgainstUser: {
-          columns: { id: true, name: true, role: true }
+          columns: { id: true, name: true, role: true },
         },
         assignedAdmin: {
-          columns: { id: true, name: true }
+          columns: { id: true, name: true },
         },
         documents: {
           where: eq(disputeDocuments.isDeleted, false),
-          columns: { id: true, fileName: true, uploadedAt: true }
-        }
+          columns: { id: true, fileName: true, uploadedAt: true },
+        },
       },
       orderBy: [desc(disputes.createdAt)],
       limit,
@@ -373,7 +387,7 @@ export class DisputeService {
       // Verify admin role
       const admin = await tx.query.users.findFirst({
         where: eq(users.id, adminId),
-        columns: { id: true, role: true }
+        columns: { id: true, role: true },
       });
 
       if (!admin || admin.role !== "admin") {
@@ -382,21 +396,18 @@ export class DisputeService {
 
       // Get dispute
       const dispute = await tx.query.disputes.findFirst({
-        where: and(
-          eq(disputes.id, disputeId),
-          eq(disputes.isDeleted, false)
-        ),
+        where: and(eq(disputes.id, disputeId), eq(disputes.isDeleted, false)),
         with: {
           reportedByUser: {
-            columns: { id: true, name: true }
+            columns: { id: true, name: true },
           },
           reportedAgainstUser: {
-            columns: { id: true, name: true }
+            columns: { id: true, name: true },
           },
           jobPost: {
-            columns: { id: true, title: true }
-          }
-        }
+            columns: { id: true, title: true },
+          },
+        },
       });
 
       if (!dispute) {
@@ -456,40 +467,40 @@ export class DisputeService {
             metadata: {
               oldStatus: dispute.status,
               newStatus: data.status,
-            }
+            },
           }
         )
       );
 
       // Notify reported against user
-      notificationPromises.push(
-        NotificationService.createFromTemplate(
-          "DISPUTE_STATUS_UPDATED",
-          dispute.reportedAgainst,
-          {
-            disputeNumber: dispute.disputeNumber,
-            newStatus: data.status,
-            jobTitle: dispute.jobPost.title,
-          },
-          {
-            disputeId: dispute.id,
-            jobPostId: dispute.jobPostId,
-            relatedUserId: adminId,
-            sendEmail: true,
-            metadata: {
-              oldStatus: dispute.status,
-              newStatus: data.status,
-            }
-          }
-        )
-      );
+      // notificationPromises.push(
+      //   NotificationService.createFromTemplate(
+      //     "DISPUTE_STATUS_UPDATED",
+      //     dispute.reportedAgainst,
+      //     {
+      //       disputeNumber: dispute.disputeNumber,
+      //       newStatus: data.status,
+      //       jobTitle: dispute.jobPost.title,
+      //     },
+      //     {
+      //       disputeId: dispute.id,
+      //       jobPostId: dispute.jobPostId,
+      //       relatedUserId: adminId,
+      //       sendEmail: true,
+      //       metadata: {
+      //         oldStatus: dispute.status,
+      //         newStatus: data.status,
+      //       }
+      //     }
+      //   )
+      // );
 
-    //   try {
-    //     await Promise.all(notificationPromises);
-    //   } catch (notificationError) {
-    //     console.error("Failed to create notifications:", notificationError);
-    //     // Continue without failing the status update
-    //   }
+      try {
+        await Promise.all(notificationPromises);
+      } catch (notificationError) {
+        console.error("Failed to create notifications:", notificationError);
+        // Continue without failing the status update
+      }
 
       return updatedDispute;
     });
@@ -504,11 +515,13 @@ export class DisputeService {
   ) {
     // Verify dispute exists and user has access
     const dispute = await db.query.disputes.findFirst({
-      where: and(
-        eq(disputes.id, disputeId),
-        eq(disputes.isDeleted, false)
-      ),
-      columns: { id: true, reportedBy: true, reportedAgainst: true, status: true }
+      where: and(eq(disputes.id, disputeId), eq(disputes.isDeleted, false)),
+      columns: {
+        id: true,
+        reportedBy: true,
+        reportedAgainst: true,
+        status: true,
+      },
     });
 
     if (!dispute) {
@@ -516,9 +529,8 @@ export class DisputeService {
     }
 
     // Check access
-    const hasAccess = 
-      dispute.reportedBy === userId || 
-      dispute.reportedAgainst === userId;
+    const hasAccess =
+      dispute.reportedBy === userId || dispute.reportedAgainst === userId;
 
     if (!hasAccess) {
       throw new Error("Access denied");
@@ -535,7 +547,7 @@ export class DisputeService {
         eq(disputeDocuments.disputeId, disputeId),
         eq(disputeDocuments.uploadedBy, userId),
         eq(disputeDocuments.isDeleted, false)
-      )
+      ),
     });
 
     if (existingDocs.length >= 2) {
@@ -544,14 +556,19 @@ export class DisputeService {
 
     // Validate file type and generate presigned URL
     const allowedTypes = [
-      'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
 
     if (!allowedTypes.includes(contentType)) {
-      throw new Error("File type not allowed. Supported: JPG, PNG, WebP, PDF, DOC, DOCX");
+      throw new Error(
+        "File type not allowed. Supported: JPG, PNG, WebP, PDF, DOC, DOCX"
+      );
     }
 
     try {
@@ -570,7 +587,10 @@ export class DisputeService {
         currentDocuments: existingDocs.length,
       };
     } catch (error) {
-      console.error("Error generating presigned URL for dispute document:", error);
+      console.error(
+        "Error generating presigned URL for dispute document:",
+        error
+      );
       throw new Error("Failed to generate upload URL");
     }
   }
@@ -583,15 +603,15 @@ export class DisputeService {
         eq(disputes.id, data.disputeId),
         eq(disputes.isDeleted, false)
       ),
-      columns: { id: true, reportedBy: true, reportedAgainst: true }
+      columns: { id: true, reportedBy: true, reportedAgainst: true },
     });
 
     if (!dispute) {
       throw new Error("Dispute not found");
     }
 
-    const hasAccess = 
-      dispute.reportedBy === data.uploadedBy || 
+    const hasAccess =
+      dispute.reportedBy === data.uploadedBy ||
       dispute.reportedAgainst === data.uploadedBy;
 
     if (!hasAccess) {
@@ -620,7 +640,11 @@ export class DisputeService {
   }
 
   // Delete document
-  static async deleteDocument(documentId: string, userId: string, userRole: string) {
+  static async deleteDocument(
+    documentId: string,
+    userId: string,
+    userRole: string
+  ) {
     const document = await db.query.disputeDocuments.findFirst({
       where: and(
         eq(disputeDocuments.id, documentId),
@@ -628,9 +652,9 @@ export class DisputeService {
       ),
       with: {
         dispute: {
-          columns: { id: true, status: true }
-        }
-      }
+          columns: { id: true, status: true },
+        },
+      },
     });
 
     if (!document) {
@@ -638,16 +662,17 @@ export class DisputeService {
     }
 
     // Only uploader or admin can delete
-    const canDelete = 
-      document.uploadedBy === userId || 
-      userRole === "admin";
+    const canDelete = document.uploadedBy === userId || userRole === "admin";
 
     if (!canDelete) {
       throw new Error("Access denied");
     }
 
     // Can't delete from resolved disputes
-    if (document.dispute.status === "resolved" || document.dispute.status === "dismissed") {
+    if (
+      document.dispute.status === "resolved" ||
+      document.dispute.status === "dismissed"
+    ) {
       throw new Error("Cannot delete documents from resolved disputes");
     }
 
@@ -672,44 +697,31 @@ export class DisputeService {
 
   // Get dispute statistics (for admin dashboard)
   static async getDisputeStats() {
-    const [
-      totalDisputes,
-      openDisputes,
-      inReviewDisputes,
-      resolvedDisputes,
-    ] = await Promise.all([
-      db
-        .select({ count: count() })
-        .from(disputes)
-        .where(eq(disputes.isDeleted, false)),
-      db
-        .select({ count: count() })
-        .from(disputes)
-        .where(
-          and(
-            eq(disputes.status, "open"),
-            eq(disputes.isDeleted, false)
-          )
-        ),
-      db
-        .select({ count: count() })
-        .from(disputes)
-        .where(
-          and(
-            eq(disputes.status, "in_review"),
-            eq(disputes.isDeleted, false)
-          )
-        ),
-      db
-        .select({ count: count() })
-        .from(disputes)
-        .where(
-          and(
-            eq(disputes.status, "resolved"),
-            eq(disputes.isDeleted, false)
-          )
-        ),
-    ]);
+    const [totalDisputes, openDisputes, inReviewDisputes, resolvedDisputes] =
+      await Promise.all([
+        db
+          .select({ count: count() })
+          .from(disputes)
+          .where(eq(disputes.isDeleted, false)),
+        db
+          .select({ count: count() })
+          .from(disputes)
+          .where(
+            and(eq(disputes.status, "open"), eq(disputes.isDeleted, false))
+          ),
+        db
+          .select({ count: count() })
+          .from(disputes)
+          .where(
+            and(eq(disputes.status, "in_review"), eq(disputes.isDeleted, false))
+          ),
+        db
+          .select({ count: count() })
+          .from(disputes)
+          .where(
+            and(eq(disputes.status, "resolved"), eq(disputes.isDeleted, false))
+          ),
+      ]);
 
     return {
       total: totalDisputes[0].count,

@@ -37,7 +37,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "dispute_created", // New dispute was created
   "dispute_status_updated", // Dispute status changed
   "dispute_resolved", // Dispute was resolved
-  "dispute_assigned", // Dispute was assigned to admin
+  "dispute_assigned",
+  "system_announcement" // Dispute was assigned to admin
 ]);
 
 export const notificationPriorityEnum = pgEnum("notification_priority", [
@@ -281,5 +282,13 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     priority: 'high',
     actionUrl: '/admin/disputes/{disputeId}',
     actionLabel: 'Review Dispute'
-  }
+  },
+  PROFILE_COMPLETED: {
+    type: 'system_announcement',
+    title: 'New Profile Completed',
+    message: '{userName} has completed their {userRole} profile',
+    priority: 'normal',
+    actionUrl: '/admin/users/{relatedUserId}',
+    actionLabel: 'View Profile'
+  },  
 };
