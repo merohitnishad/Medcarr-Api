@@ -289,7 +289,7 @@ export class IndividualService {
             adminUser.id,
             {
               userName: user.name || "no name",
-              userRole: "Individual",
+              userRole: "individual",
             },
             {
               relatedUserId: userId,
