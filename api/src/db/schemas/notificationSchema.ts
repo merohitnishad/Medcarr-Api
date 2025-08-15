@@ -33,12 +33,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "system_announcement", // General system notifications
   "new_message_received", // ADD THIS LINE - New message received
   "review_received", // New review received
-  // ADD THESE NEW DISPUTE TYPES:
   "dispute_created", // New dispute was created
   "dispute_status_updated", // Dispute status changed
   "dispute_resolved", // Dispute was resolved
   "dispute_assigned",
-  "system_announcement" // Dispute was assigned to admin
 ]);
 
 export const notificationPriorityEnum = pgEnum("notification_priority", [
