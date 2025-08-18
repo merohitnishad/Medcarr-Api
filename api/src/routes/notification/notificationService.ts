@@ -50,8 +50,17 @@ export class NotificationService {
   });
 
   // Create a notification
-  static async createNotification(data: CreateNotificationData) {
-    return await db.transaction(async (tx) => {
+  static async createNotification(data: CreateNotificationData, tx?: any) {
+    const dbInstance = tx || db;
+
+    const executeQuery = async (queryFn: any) => {
+      if (tx) {
+        return await queryFn(tx);
+      } else {
+        return await db.transaction(queryFn);
+      }
+    };
+    return await executeQuery(async (transaction: any) => {
       // Use template if type matches
       const template =
         NOTIFICATION_TEMPLATES[data.type.toUpperCase().replace(" ", "_")];
@@ -75,7 +84,7 @@ export class NotificationService {
       };
 
       // Create notification
-      const [notification] = await tx
+      const [notification] = await transaction
         .insert(notifications)
         .values(notificationData)
         .returning();
@@ -124,7 +133,8 @@ export class NotificationService {
     templateKey: string,
     userId: string,
     replacements: Record<string, string> = {},
-    additionalData: Partial<CreateNotificationData> = {}
+    additionalData: Partial<CreateNotificationData> = {},
+    tx?: any // Add this parameter
   ) {
     const template = NOTIFICATION_TEMPLATES[templateKey];
     if (!template) {
@@ -167,7 +177,7 @@ export class NotificationService {
       actionUrl,
       actionLabel: template.actionLabel,
       ...additionalData,
-    });
+    }, tx);
   }
 
   // NEW METHOD - Handle message notification creation/update

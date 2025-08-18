@@ -170,7 +170,8 @@ export class DisputeService {
               metadata: {
                 disputeType: data.disputeType,
               },
-            }
+            },
+            tx
           );
         }
       } catch (notificationError) {
