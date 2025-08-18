@@ -127,6 +127,20 @@
       "when": 1755075819203,
       "tag": "0017_dusty_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1755525199801,
+      "tag": "0018_rainy_scream",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1755525576682,
+      "tag": "0019_wise_leo",
+      "breakpoints": true
     }
   ]
 }

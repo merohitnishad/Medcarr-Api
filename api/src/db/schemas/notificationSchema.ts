@@ -75,7 +75,6 @@ export const notifications = pgTable(
 
     disputeId: uuid("dispute_id").references(() => disputes.id, { onDelete: "set null" }), // ADD THIS LINE
 
-
     // Additional data (JSON for flexibility)
     metadata: json("metadata"), // Any additional data needed
 
@@ -115,6 +114,7 @@ export const notifications = pgTable(
     jobApplicationIdIdx: index("notifications_job_application_id_idx").on(
       table.jobApplicationId
     ),
+    disputeIdIdx: index("notifications_dispute_id_idx").on(table.disputeId),
   })
 );
 
@@ -141,6 +141,7 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   dispute: one(disputes, { // ADD THIS RELATION
     fields: [notifications.disputeId],
     references: [disputes.id],
+    relationName: "disputeNotifications", // Add explicit relation name
   }),
 
 }));
