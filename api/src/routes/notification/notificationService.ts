@@ -91,7 +91,7 @@ export class NotificationService {
 
       // Send email if requested
       if (data.sendEmail !== false) {
-        await this.sendEmailNotification(notification.id);
+        await this.sendEmailNotification(notification.id, transaction);
       }
 
       // NEW: Emit real-time notification if user is online
@@ -497,8 +497,10 @@ export class NotificationService {
   }
 
   // Send email notification
-  static async sendEmailNotification(notificationId: string) {
+  static async sendEmailNotification(notificationId: string, tx?: any) {
     try {
+      const dbInstance = tx || db;
+
       const notification = await db.query.notifications.findFirst({
         where: eq(notifications.id, notificationId),
         with: {
@@ -525,7 +527,7 @@ export class NotificationService {
       });
 
       // Mark email as sent
-      await db
+      await dbInstance
         .update(notifications)
         .set({
           isEmailSent: true,

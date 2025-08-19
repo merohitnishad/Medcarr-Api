@@ -35,6 +35,7 @@ import {
   like,
   gte,
   lte,
+  ne,
 } from "drizzle-orm";
 import { NotificationService } from "../notification/notificationService.js";
 import { ReviewService } from "../review/reviewService.js";
@@ -145,7 +146,7 @@ export class AdminService {
       role?: string;
       searchTerm?: string;
     } = {}
-  ): Promise<{ requests: UserRequest[]; pagination: any }> {
+  ): Promise<{ requests: UserRequest[]; pagination: any; totalRequestsCount: number }> {
     try {
       const { page = 1, limit = 20, role, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -259,6 +260,7 @@ export class AdminService {
           hasNext: page < totalPages,
           hasPrev: page > 1,
         },
+        totalRequestsCount: totalCount, // Add total requests count
       };
     } catch (error) {
       console.error("Error fetching user requests:", error);
@@ -420,7 +422,10 @@ export class AdminService {
 
       const whereConditions = [
         eq(users.role, "individual"),
+        eq(users.profileVerified, true),
+        eq(users.profileCompleted, true),
         eq(users.isDeleted, false),
+        ne(users.role, "admin"),
       ];
 
       // ADD NEW FILTERS
@@ -565,7 +570,10 @@ export class AdminService {
 
       const whereConditions = [
         eq(users.role, "organization"),
+        eq(users.profileVerified, true),
+        eq(users.profileCompleted, true),
         eq(users.isDeleted, false),
+        ne(users.role, "admin"),
       ];
 
       // ADD NEW FILTERS
@@ -674,7 +682,10 @@ export class AdminService {
 
       const whereConditions = [
         eq(users.role, "healthcare"),
+        eq(users.profileVerified, true),
+        eq(users.profileCompleted, true),
         eq(users.isDeleted, false),
+        ne(users.role, "admin"),
       ];
 
       // ADD NEW FILTERS
@@ -1637,7 +1648,7 @@ export class AdminService {
       isRead?: boolean;
       type?: string;
     } = {}
-  ): Promise<{ data: any[]; pagination: any }> {
+  ): Promise<{ data: any[]; pagination: any; unreadCount: number }> {
     try {
       // Validate admin access
       const isAdmin = await this.validateAdminAccess(adminId);
@@ -1658,7 +1669,8 @@ export class AdminService {
         whereConditions.push(eq(notifications.type, type as any));
       }
 
-      const [adminNotifications, totalCount] = await Promise.all([
+      // Add unread count query to the Promise.all
+      const [adminNotifications, totalCount, unreadCount] = await Promise.all([
         db.query.notifications.findMany({
           where: and(...whereConditions),
           with: {
@@ -1698,6 +1710,8 @@ export class AdminService {
           .from(notifications)
           .where(and(...whereConditions))
           .then((result) => result[0].count),
+        // Add unread count query
+        NotificationService.getUnreadCount(adminId),
       ]);
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -1712,6 +1726,7 @@ export class AdminService {
           hasNext: page < totalPages,
           hasPrev: page > 1,
         },
+        unreadCount, // Add unreadCount to return object
       };
     } catch (error) {
       console.error("Error fetching admin notifications:", error);
