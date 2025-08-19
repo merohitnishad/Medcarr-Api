@@ -255,7 +255,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
     title: 'New Dispute Created',
     message: 'A new dispute #{disputeNumber} has been filed regarding job "{jobTitle}"',
     priority: 'high',
-    actionUrl: '/admin/disputes/{disputeId}',
+    actionUrl: '/disputes/{disputeId}',
     actionLabel: 'Review Dispute'
   },
   DISPUTE_STATUS_UPDATED: {

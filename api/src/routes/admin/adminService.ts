@@ -404,8 +404,121 @@ export class AdminService {
 
   // ==================== USERS MANAGEMENT ====================
 
-  // Get individuals with job details
 
+  static async getNoncompletedUsers(
+    options: UserFilters = {}
+  ): Promise<{ users: UserWithJobs[]; pagination: any }> {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        searchTerm,
+        isActive,
+        createdAt,
+        postcode,
+      } = options;
+      const offset = (page - 1) * limit;
+
+      const whereConditions = [
+        eq(users.profileVerified, false),
+        eq(users.profileCompleted, false),
+        eq(users.isDeleted, false),
+        ne(users.role, "admin"),
+      ];
+
+      // ADD NEW FILTERS
+      if (isActive !== undefined) {
+        whereConditions.push(eq(users.isActive, isActive));
+      } else {
+        whereConditions.push(eq(users.isActive, true)); // Default behavior
+      }
+
+      if (createdAt) {
+        const filterDate = new Date(createdAt);
+        const dayStart = new Date(filterDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(filterDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        whereConditions.push(gte(users.createdAt, dayStart));
+        whereConditions.push(lte(users.createdAt, dayEnd));
+      }
+
+      //   if (searchTerm) {
+      //     whereConditions.push(
+      //       or(
+      //         like(users.email, `%${searchTerm}%`),
+      //         like(users.name, `%${searchTerm}%`)
+      //       )
+      //     );
+      //   }
+
+      // Add postcode filter for individualProfile
+      if (postcode) {
+        whereConditions.push(eq(individualProfiles.postcode, postcode)); // Default behavior
+      }
+
+      // Get results with postcode filtering
+      let individuals = await db.query.users.findMany({
+        where: and(...whereConditions),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          profileCompleted: true,
+          profileVerified: true,
+          dbsVerified: true,
+          isActive: true,
+          createdAt: true,
+          cognitoId: false,
+        },
+        orderBy: [desc(users.createdAt)],
+      });
+
+
+      // Apply pagination after filtering
+      const filteredTotal = individuals.length;
+      const paginatedResults = individuals.slice(offset, offset + limit);
+
+      // Transform results
+      const transformedUsers: UserWithJobs[] = paginatedResults.map((user) => {
+        const baseUser: UserWithJobs = {
+          id: user.id,
+          email: user.email,
+          name: user.name || undefined,
+          role: user.role,
+          profileCompleted: user.profileCompleted,
+          profileVerified: user.profileVerified,
+          dbsVerified: user.dbsVerified,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+          profile: null,
+        };
+
+        return baseUser;
+      });
+
+      const totalPages = Math.ceil(filteredTotal / limit);
+
+      return {
+        users: transformedUsers,
+        pagination: {
+          page,
+          limit,
+          total: filteredTotal,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching non complete users:", error);
+      throw new Error("Failed to fetch non complete users");
+    }
+  }
+
+   // Get individuals with job details
   static async getIndividuals(
     options: UserFilters = {}
   ): Promise<{ users: UserWithJobs[]; pagination: any }> {
@@ -1479,6 +1592,7 @@ export class AdminService {
             disputeNumber: dispute.disputeNumber,
             newStatus: data.status,
             jobTitle: dispute.jobPost.title,
+            disputeId: dispute.id,
           },
           {
             disputeId: dispute.id,

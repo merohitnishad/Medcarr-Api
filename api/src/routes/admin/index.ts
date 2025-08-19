@@ -221,6 +221,53 @@ router.post(
 );
 
 // ==================== USERS MANAGEMENT ====================
+// Get non complete with job details
+router.get(
+  "/users/non-complete",
+  requireAdminRole,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        isActive,
+        createdAt,
+        postcode,
+      } = req.query;
+
+      // Parse isActive parameter
+      let isActiveFilter = undefined;
+      if (isActive === "true") isActiveFilter = true;
+      if (isActive === "false") isActiveFilter = false;
+
+      const result = await AdminService.getIndividuals({
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        searchTerm: search as string,
+        isActive: isActiveFilter,
+        createdAt: createdAt as string,
+        postcode: postcode as string,
+      });
+
+      res.json({
+        success: true,
+        data: result,
+      });
+      return;
+    } catch (error) {
+      console.error("Error in get non-complete route:", error);
+      res.status(500).json({
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch non-complete users",
+      });
+      return;
+    }
+  }
+);
 
 // Get individuals with job details
 router.get(

@@ -161,6 +161,7 @@ export class DisputeService {
               disputeNumber: dispute.disputeNumber,
               jobTitle: jobPost.title,
               reporterName: data.reportedBy,
+              disputeId: dispute.id, // This should work now
             },
             {
               disputeId: dispute.id, // This should work now
@@ -462,6 +463,7 @@ export class DisputeService {
             disputeNumber: dispute.disputeNumber,
             newStatus: data.status,
             jobTitle: dispute.jobPost.title,
+            disputeId: dispute.id, // This should work now
           },
           {
             disputeId: dispute.id,
