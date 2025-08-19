@@ -146,7 +146,11 @@ export class AdminService {
       role?: string;
       searchTerm?: string;
     } = {}
-  ): Promise<{ requests: UserRequest[]; pagination: any; totalRequestsCount: number }> {
+  ): Promise<{
+    requests: UserRequest[];
+    pagination: any;
+    totalRequestsCount: number;
+  }> {
     try {
       const { page = 1, limit = 20, role, searchTerm } = options;
       const offset = (page - 1) * limit;
@@ -402,8 +406,23 @@ export class AdminService {
     }
   }
 
-  // ==================== USERS MANAGEMENT ====================
+  static async getTotalRequestCount(): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(users)
+      .where(
+        and(
+          eq(users.profileCompleted, true),
+          or(eq(users.profileVerified, false), eq(users.dbsVerified, false)), // Match getUserRequests logic
+          eq(users.isActive, true),
+          eq(users.isDeleted, false) // Fix: use users.isDeleted instead of notifications.isDeleted
+        )
+      );
+  
+    return result.count;
+  }
 
+  // ==================== USERS MANAGEMENT ====================
 
   static async getNoncompletedUsers(
     options: UserFilters = {}
@@ -476,7 +495,6 @@ export class AdminService {
         orderBy: [desc(users.createdAt)],
       });
 
-
       // Apply pagination after filtering
       const filteredTotal = individuals.length;
       const paginatedResults = individuals.slice(offset, offset + limit);
@@ -518,7 +536,7 @@ export class AdminService {
     }
   }
 
-   // Get individuals with job details
+  // Get individuals with job details
   static async getIndividuals(
     options: UserFilters = {}
   ): Promise<{ users: UserWithJobs[]; pagination: any }> {
@@ -1913,6 +1931,23 @@ export class AdminService {
       console.error("Error marking all notifications as read:", error);
       throw new Error("Failed to mark all notifications as read");
     }
+  }
+
+  // Get unread notification count
+  static async getUnreadCount(userId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.isRead, false),
+          eq(notifications.isActive, true),
+          eq(notifications.isDeleted, false)
+        )
+      );
+
+    return result.count;
   }
 
   // ==================== DASHBOARD STATS ====================

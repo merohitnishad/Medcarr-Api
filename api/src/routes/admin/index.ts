@@ -220,6 +220,28 @@ router.post(
   }
 );
 
+router.get('/totalUserRequest', requireAdminRole, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const count = await AdminService.getTotalRequestCount();
+
+    res.json({
+      success: true,
+      data: { count }
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get total count route:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch total count'
+    });
+    return;
+  }
+});
+
+
+
 // ==================== USERS MANAGEMENT ====================
 // Get non complete with job details
 router.get(
@@ -918,6 +940,26 @@ router.patch(
     }
   }
 );
+
+router.get('/unread-count', requireAdminRole, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const count = await AdminService.getUnreadCount(userId);
+
+    res.json({
+      success: true,
+      data: { count }
+    });
+    return;
+  } catch (error) {
+    console.error('Error in get unread count route:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch unread count'
+    });
+    return;
+  }
+});
 
 // ==================== ADMIN PROFILE ====================
 
