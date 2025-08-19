@@ -49,17 +49,6 @@ export class NotificationService {
     },
   });
 
-  static async testEmailConnection() {
-    try {
-      await this.emailTransporter.verify();
-      console.log("Email transporter is ready");
-      return true;
-    } catch (error) {
-      console.error("Email transporter verification failed:", error);
-      return false;
-    }
-  }
-
   private static validateEmailConfig() {
     const config = {
       host: process.env.EMAIL_HOST,
