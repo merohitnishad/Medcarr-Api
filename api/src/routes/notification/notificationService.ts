@@ -49,6 +49,37 @@ export class NotificationService {
     },
   });
 
+  static async testEmailConnection() {
+    try {
+      await this.emailTransporter.verify();
+      console.log("Email transporter is ready");
+      return true;
+    } catch (error) {
+      console.error("Email transporter verification failed:", error);
+      return false;
+    }
+  }
+
+  private static validateEmailConfig() {
+    const config = {
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+      from: process.env.EMAIL_FROM
+    };
+    
+    console.log("Email config:", {
+      host: config.host,
+      port: config.port,
+      user: config.user ? '***' : 'missing',
+      pass: config.pass ? '***' : 'missing',
+      from: config.from
+    });
+    
+    return config.host && config.port && config.user && config.pass;
+  }
+
   // Create a notification
   static async createNotification(data: CreateNotificationData, tx?: any) {
     const dbInstance = tx || db;
@@ -85,20 +116,29 @@ export class NotificationService {
 
       // Create notification
       const [notification] = await transaction
-        .insert(notifications)
-        .values(notificationData)
-        .returning();
-
+      .insert(notifications)
+      .values(notificationData)
+      .returning();
+      
       // Send email if requested
-      if (data.sendEmail !== false) {
-        await this.sendEmailNotification(notification.id, transaction);
+      if (data.sendEmail !== false && notification.id) {
+        if (!this.validateEmailConfig()) {
+          console.error("Email configuration is incomplete");
+          return notification;
+        }
+        
+        try {
+          await this.sendEmailNotification(notification.id, transaction);
+        } catch (emailError) {
+          console.error("Email sending failed:", emailError);
+        }
       }
 
       // NEW: Emit real-time notification if user is online
       const socketManager = global.socketManager;
       if (socketManager && socketManager.isUserOnline(data.userId)) {
         // Get full notification data with relations for the socket event
-        const fullNotification = await tx.query.notifications.findFirst({
+        const fullNotification = await transaction.query.notifications.findFirst({ // Use transaction instead of tx
           where: eq(notifications.id, notification.id),
           with: {
             relatedUser: {
@@ -112,6 +152,7 @@ export class NotificationService {
             },
           },
         });
+      
 
         if (fullNotification) {
           socketManager.sendNotificationToUser(data.userId, fullNotification);
@@ -499,46 +540,73 @@ export class NotificationService {
   // Send email notification
   static async sendEmailNotification(notificationId: string, tx?: any) {
     try {
-      const dbInstance = tx || db;
-
-      const notification = await db.query.notifications.findFirst({
-        where: eq(notifications.id, notificationId),
-        with: {
-          user: {
-            columns: {
-              email: true,
-              name: true,
+      let notification;
+      
+      if (tx) {
+        // When using transaction, use the transaction's query method
+        notification = await tx.query.notifications.findFirst({
+          where: eq(notifications.id, notificationId),
+          with: {
+            user: {
+              columns: {
+                email: true,
+                name: true,
+              },
             },
           },
-        },
-      });
-
+        });
+      } else {
+        // When not using transaction, use db directly
+        notification = await db.query.notifications.findFirst({
+          where: eq(notifications.id, notificationId),
+          with: {
+            user: {
+              columns: {
+                email: true,
+                name: true,
+              },
+            },
+          },
+        });
+      }
+  
       if (!notification || !notification.user?.email) {
+        console.log("No notification or email found for:", notificationId);
         return false;
       }
-
+    
       const emailHtml = this.generateEmailTemplate(notification);
-
+  
       await this.emailTransporter.sendMail({
         from: process.env.EMAIL_FROM || "noreply@careconnect.com",
         to: notification.user.email,
         subject: notification.title,
         html: emailHtml,
       });
-
-      // Mark email as sent
-      await dbInstance
-        .update(notifications)
-        .set({
-          isEmailSent: true,
-          emailSentAt: new Date(),
-        })
-        .where(eq(notifications.id, notificationId));
-
+    
+      // Mark email as sent - use appropriate db instance
+      if (tx) {
+        await tx
+          .update(notifications)
+          .set({
+            isEmailSent: true,
+            emailSentAt: new Date(),
+          })
+          .where(eq(notifications.id, notificationId));
+      } else {
+        await db
+          .update(notifications)
+          .set({
+            isEmailSent: true,
+            emailSentAt: new Date(),
+          })
+          .where(eq(notifications.id, notificationId));
+      }
+  
       return true;
     } catch (error) {
       console.error("Error sending email notification:", error);
-      return false;
+      throw error;
     }
   }
 
