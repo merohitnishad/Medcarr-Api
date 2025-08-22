@@ -109,6 +109,8 @@ export const organizationProfiles = pgTable(
   })
 );
 
+export const dbsVerificationStatusEnum = pgEnum("dbs_verification_status", ["pending", "verified", "rejected"]);
+
 // Healthcare Profile Table
 export const healthcareProfiles = pgTable(
   "healthcare_profiles",
@@ -123,6 +125,15 @@ export const healthcareProfiles = pgTable(
     gender: genderEnum("gender").notNull(),
     professionalTitle: varchar("professional_title", { length: 255 }).notNull(),
     image: varchar("image_url", { length: 500 }),
+   
+    dbsFileUrl: varchar("dbs_file_url", { length: 500 }),
+    dbsVerificationStatus: dbsVerificationStatusEnum("dbs_verification_status").default("pending"),
+    dbsVerificationDate: timestamp("dbs_verification_date", { withTimezone: true }),
+    dbsNumber: varchar("dbs_number", { length: 255 }),
+    dbsExpiryDate: date("dbs_expiry_date"),
+    dbsVerificationNotes: text("dbs_verification_notes"),
+
+    
     nationality: varchar("nationality", { length: 100 }).notNull(), // added nationality
     postcode: varchar("postcode", { length: 20 }).notNull(),
     phoneNumber: varchar("phone_number", { length: 20 }).notNull(),

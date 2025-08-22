@@ -8,6 +8,13 @@
       "when": 1755526195273,
       "tag": "0000_silent_talos",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1755857007249,
+      "tag": "0001_pink_micromax",
+      "breakpoints": true
     }
   ]
 }

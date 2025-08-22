@@ -39,6 +39,13 @@ export interface HealthcareProfile {
   professionalSummary: string;
   preferredTime?: string[];
   experience?: number;
+  // DBS fields
+  dbsFileUrl?: string;
+  dbsNumber?: string;
+  dbsExpiryDate?: string;
+  dbsVerificationStatus?: string;
+  dbsVerificationDate?: Date;
+  dbsVerificationNotes?: string;
   createdAt: Date;
   updatedAt: Date;
   // Include related data
@@ -86,6 +93,10 @@ export interface CreateHealthcareProfileData {
   experience?: number;
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
+  // DBS fields
+  dbsFileUrl?: string;
+  dbsNumber?: string;
+  dbsExpiryDate?: string;
 }
 export interface BankDetails {
   id: string;
@@ -319,6 +330,7 @@ export class HealthcareService {
           specialityIds,
           languageIds,
           imageKey,
+          dbsExpiryDate,
           ...profileDataWithoutManyToMany
         } = profileData;
 
@@ -330,6 +342,7 @@ export class HealthcareService {
             dateOfBirth: profileData.dateOfBirth, // Convert string to Date
             gender: profileData.gender as "male" | "female",
             image: profileData.imageUrl, // Set the uploaded image URL
+            dbsExpiryDate: dbsExpiryDate ? new Date(dbsExpiryDate) : undefined, // Convert string to Date
           })
           .returning();
 
@@ -425,6 +438,7 @@ export class HealthcareService {
           specialityIds,
           languageIds,
           imageKey,
+          dbsExpiryDate,
           ...profileDataWithoutManyToMany
         } = profileData;
 
@@ -440,6 +454,11 @@ export class HealthcareService {
         // Add image URL to update data if provided
         if (profileData.imageUrl) {
           updateData.image = profileData.imageUrl;
+        }
+
+        // Handle DBS expiry date conversion
+        if (dbsExpiryDate) {
+          updateData.dbsExpiryDate = new Date(dbsExpiryDate);
         }
 
         if (Object.keys(updateData).length > 1) {
@@ -789,6 +808,30 @@ export class HealthcareService {
         data.preferredTime.some((time) => !time || typeof time !== "string")
       ) {
         errors.push("All preferred times must be valid strings");
+      }
+    }
+
+    // DBS field validations
+    if (data.dbsNumber !== undefined && data.dbsNumber) {
+      if (data.dbsNumber.trim().length < 3) {
+        errors.push("DBS number must be at least 3 characters long");
+      }
+    }
+
+    if (data.dbsExpiryDate !== undefined && data.dbsExpiryDate) {
+      const expiryDate = new Date(data.dbsExpiryDate);
+      if (isNaN(expiryDate.getTime())) {
+        errors.push("DBS expiry date must be a valid date");
+      } else if (expiryDate < new Date()) {
+        errors.push("DBS expiry date cannot be in the past");
+      }
+    }
+
+    if (data.dbsFileUrl !== undefined && data.dbsFileUrl) {
+      // Basic URL validation for DBS file
+      const urlPattern = /^(https?:\/\/)[\w.-]+\.[a-z]{2,}(\S*)$/i;
+      if (!urlPattern.test(data.dbsFileUrl)) {
+        errors.push("DBS file URL must be a valid URL");
       }
     }
 
