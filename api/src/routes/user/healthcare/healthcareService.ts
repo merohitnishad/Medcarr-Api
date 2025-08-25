@@ -40,12 +40,13 @@ export interface HealthcareProfile {
   preferredTime?: string[];
   experience?: number;
   // DBS fields
-  dbsFileUrl?: string;
-  dbsNumber?: string;
-  dbsExpiryDate?: string;
-  dbsVerificationStatus?: string;
-  dbsVerificationDate?: Date;
-  dbsVerificationNotes?: string;
+  dbsFileUrl?: string | null;
+  dbsFileKey?: string | null;
+  dbsNumber?: string | null;
+  dbsExpiryDate?: string | null;
+  dbsVerificationStatus?: string | null;
+  dbsVerificationDate?: Date | null;
+  dbsVerificationNotes?: string | null;
   createdAt: Date;
   updatedAt: Date;
   // Include related data
@@ -94,9 +95,11 @@ export interface CreateHealthcareProfileData {
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
   // DBS fields
-  dbsFileUrl?: string;
-  dbsNumber?: string;
-  dbsExpiryDate?: string;
+  dbsFileUrl?: string | null;
+  dbsNumber?: string | null;
+  dbsExpiryDate?: string | null;
+  dbsFileKey?: string | null;
+
 }
 export interface BankDetails {
   id: string;
@@ -331,19 +334,31 @@ export class HealthcareService {
           languageIds,
           imageKey,
           dbsExpiryDate,
+          dbsFileKey,
           ...profileDataWithoutManyToMany
         } = profileData;
 
+        const insertPayload: any = {
+          userId,
+          ...profileDataWithoutManyToMany,
+          // dateOfBirth is stored as SQL date; keep as string (YYYY-MM-DD)
+          dateOfBirth: profileData.dateOfBirth,
+          gender: profileData.gender as "male" | "female",
+          image: profileData.imageUrl, // Set the uploaded image URL
+        };
+
+        // Include DBS fields if provided (keep date as string)
+        if (dbsExpiryDate !== undefined) {
+          insertPayload.dbsExpiryDate = dbsExpiryDate || null;
+        }
+
+        if (profileData.dbsFileKey !== undefined) {
+          insertPayload.dbsFileKey = profileData.dbsFileKey;
+        }
+
         const [createdProfile] = await tx
           .insert(healthcareProfiles)
-          .values({
-            userId,
-            ...profileDataWithoutManyToMany,
-            dateOfBirth: profileData.dateOfBirth, // Convert string to Date
-            gender: profileData.gender as "male" | "female",
-            image: profileData.imageUrl, // Set the uploaded image URL
-            dbsExpiryDate: dbsExpiryDate ? new Date(dbsExpiryDate) : undefined, // Convert string to Date
-          })
+          .values(insertPayload)
           .returning();
 
         if (!createdProfile) {
@@ -439,6 +454,7 @@ export class HealthcareService {
           languageIds,
           imageKey,
           dbsExpiryDate,
+          dbsFileKey,
           ...profileDataWithoutManyToMany
         } = profileData;
 
@@ -456,9 +472,14 @@ export class HealthcareService {
           updateData.image = profileData.imageUrl;
         }
 
-        // Handle DBS expiry date conversion
-        if (dbsExpiryDate) {
-          updateData.dbsExpiryDate = new Date(dbsExpiryDate);
+        // Handle DBS expiry date conversion (allow explicit null to clear)
+        if (dbsExpiryDate !== undefined) {
+          updateData.dbsExpiryDate = dbsExpiryDate ? new Date(dbsExpiryDate) : null;
+        }
+
+        // Handle DBS file key (allow explicit null to clear)
+        if (dbsFileKey !== undefined) {
+          updateData.dbsFileKey = dbsFileKey;
         }
 
         if (Object.keys(updateData).length > 1) {

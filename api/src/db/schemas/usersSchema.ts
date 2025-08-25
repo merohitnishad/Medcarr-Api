@@ -127,6 +127,8 @@ export const healthcareProfiles = pgTable(
     image: varchar("image_url", { length: 500 }),
    
     dbsFileUrl: varchar("dbs_file_url", { length: 500 }),
+    // S3 key for the DBS file (nullable)
+    dbsFileKey: varchar("dbs_file_key", { length: 500 }),
     dbsVerificationStatus: dbsVerificationStatusEnum("dbs_verification_status").default("pending"),
     dbsVerificationDate: timestamp("dbs_verification_date", { withTimezone: true }),
     dbsNumber: varchar("dbs_number", { length: 255 }),
