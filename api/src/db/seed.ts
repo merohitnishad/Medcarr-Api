@@ -8,6 +8,7 @@ import {
   specialitiesData,
   preferencesData
 } from "../db/seeders/utils";
+import { eq } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is not set");
@@ -25,7 +26,7 @@ const seedTable = async (
 ) => {
   try {
     console.log(`⌛ Seeding ${tableName}...`);
-    
+  
     // Use onConflictDoNothing with the name column (unique constraint)
     await db.insert(table).values(data).onConflictDoNothing({
       target: table.name
@@ -67,5 +68,6 @@ const main = async () => {
     console.log("🔌 Database connection closed");
   }
 };
+
 
 main();

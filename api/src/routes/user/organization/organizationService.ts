@@ -5,6 +5,8 @@ import {
   organizationProfiles,
 } from '../../../db/schemas/usersSchema.js';
 import { eq, and } from 'drizzle-orm';
+import { NotificationService } from "../../notification/notificationService.js";
+
 
 export interface User {
   id: string;
@@ -151,6 +153,37 @@ export class OrganizationService {
 
         return createdProfile;
       });
+
+      try {
+              const adminUser = await db.query.users.findFirst({
+                where: eq(users.role, "admin"),
+                columns: { id: true },
+              });
+      
+              if (adminUser) {
+                await NotificationService.createFromTemplate(
+                  "PROFILE_COMPLETED",
+                  adminUser.id,
+                  {
+                    userName: user.name || "no name",
+                    userRole: "organziation",
+                  },
+                  {
+                    relatedUserId: userId,
+                    sendEmail: true,
+                    metadata: {
+                      profileType: "organziation",
+                    },
+                  }
+                );
+              }
+            } catch (notificationError) {
+              console.error(
+                "Failed to create admin notification:",
+                notificationError
+              );
+              // Continue without failing the profile creation
+            }
 
       // Transform the result to match our interface
       return {

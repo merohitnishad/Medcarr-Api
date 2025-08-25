@@ -209,6 +209,7 @@ router.get('/', requireHealthcareRole, async (req: AuthenticatedRequest, res: Re
       type: toArray(req.query.type) as ('oneDay' | 'weekly')[],
       paymentType: toArray(req.query.paymentType) as ('hourly' | 'fixed')[],
       caregiverGender: toArray(req.query.caregiverGender) as ('male' | 'female')[],
+      shiftType: toArray(req.query.shiftType) as ('day' | 'night')[],
       minPaymentCost: req.query.minPaymentCost ? parseInt(req.query.minPaymentCost as string) : undefined,
       maxPaymentCost: req.query.maxPaymentCost ? parseInt(req.query.maxPaymentCost as string) : undefined,
       startDate: req.query.startDate as string,
@@ -278,6 +279,7 @@ router.get('/my/posts', requireNonHealthCare, async (req: AuthenticatedRequest, 
           type: parseArrayParam(req.query.type) as ("oneDay" | "weekly")[] | undefined,
           paymentType: parseArrayParam(req.query.paymentType) as ("hourly" | "fixed")[] | undefined,
           caregiverGender: parseArrayParam(req.query.caregiverGender) as ("male" | "female")[] | undefined,
+          shiftType: parseArrayParam(req.query.shiftType) as ('day' | 'night')[],
           minPaymentCost: req.query.minPaymentCost ? parseFloat(req.query.minPaymentCost as string) : undefined,
           maxPaymentCost: req.query.maxPaymentCost ? parseFloat(req.query.maxPaymentCost as string) : undefined,
           startDate: req.query.startDate as string,
@@ -325,6 +327,36 @@ router.get('/my/past-posts', requireNonHealthCare, async (req: AuthenticatedRequ
         };
 
         const result = await JobPostService.getUserPastJobPosts(userId, filters);
+
+        // Sanitize all job posts
+        const sanitizedData = result.data.map((jobPost: any) => JobPostService.sanitizeJobPostData(jobPost));
+
+        res.json({
+            success: true,
+            data: sanitizedData,
+            pagination: result.pagination
+        });
+        return;
+    } catch (error) {
+        console.error('Error in get user past job posts route:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch your past job posts' 
+        });
+        return;
+    }
+});
+
+// Get current user's closed job posts
+router.get('/my/closed-posts', requireNonHealthCare, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const filters: JobPostFilters = {
+            page: req.query.page ? parseInt(req.query.page as string) : 1,
+            limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+        };
+
+        const result = await JobPostService.getUserClosedJobPosts(userId, filters);
 
         // Sanitize all job posts
         const sanitizedData = result.data.map((jobPost: any) => JobPostService.sanitizeJobPostData(jobPost));

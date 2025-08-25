@@ -39,6 +39,14 @@ export interface HealthcareProfile {
   professionalSummary: string;
   preferredTime?: string[];
   experience?: number;
+  // DBS fields
+  dbsFileUrl?: string | null;
+  dbsFileKey?: string | null;
+  dbsNumber?: string | null;
+  dbsExpiryDate?: string | null;
+  dbsVerificationStatus?: string | null;
+  dbsVerificationDate?: Date | null;
+  dbsVerificationNotes?: string | null;
   createdAt: Date;
   updatedAt: Date;
   // Include related data
@@ -86,6 +94,12 @@ export interface CreateHealthcareProfileData {
   experience?: number;
   specialityIds?: string[]; // Speciality IDs for many-to-many relation
   languageIds?: string[]; // Language IDs for many-to-many relation
+  // DBS fields
+  dbsFileUrl?: string | null;
+  dbsNumber?: string | null;
+  dbsExpiryDate?: string | null;
+  dbsFileKey?: string | null;
+
 }
 export interface BankDetails {
   id: string;
@@ -319,18 +333,32 @@ export class HealthcareService {
           specialityIds,
           languageIds,
           imageKey,
+          dbsExpiryDate,
+          dbsFileKey,
           ...profileDataWithoutManyToMany
         } = profileData;
 
+        const insertPayload: any = {
+          userId,
+          ...profileDataWithoutManyToMany,
+          // dateOfBirth is stored as SQL date; keep as string (YYYY-MM-DD)
+          dateOfBirth: profileData.dateOfBirth,
+          gender: profileData.gender as "male" | "female",
+          image: profileData.imageUrl, // Set the uploaded image URL
+        };
+
+        // Include DBS fields if provided (keep date as string)
+        if (dbsExpiryDate !== undefined) {
+          insertPayload.dbsExpiryDate = dbsExpiryDate || null;
+        }
+
+        if (profileData.dbsFileKey !== undefined) {
+          insertPayload.dbsFileKey = profileData.dbsFileKey;
+        }
+
         const [createdProfile] = await tx
           .insert(healthcareProfiles)
-          .values({
-            userId,
-            ...profileDataWithoutManyToMany,
-            dateOfBirth: profileData.dateOfBirth, // Convert string to Date
-            gender: profileData.gender as "male" | "female",
-            image: profileData.imageUrl, // Set the uploaded image URL
-          })
+          .values(insertPayload)
           .returning();
 
         if (!createdProfile) {
@@ -425,6 +453,8 @@ export class HealthcareService {
           specialityIds,
           languageIds,
           imageKey,
+          dbsExpiryDate,
+          dbsFileKey,
           ...profileDataWithoutManyToMany
         } = profileData;
 
@@ -440,6 +470,16 @@ export class HealthcareService {
         // Add image URL to update data if provided
         if (profileData.imageUrl) {
           updateData.image = profileData.imageUrl;
+        }
+
+        // Handle DBS expiry date conversion (allow explicit null to clear)
+        if (dbsExpiryDate !== undefined) {
+          updateData.dbsExpiryDate = dbsExpiryDate ? new Date(dbsExpiryDate) : null;
+        }
+
+        // Handle DBS file key (allow explicit null to clear)
+        if (dbsFileKey !== undefined) {
+          updateData.dbsFileKey = dbsFileKey;
         }
 
         if (Object.keys(updateData).length > 1) {
@@ -789,6 +829,30 @@ export class HealthcareService {
         data.preferredTime.some((time) => !time || typeof time !== "string")
       ) {
         errors.push("All preferred times must be valid strings");
+      }
+    }
+
+    // DBS field validations
+    if (data.dbsNumber !== undefined && data.dbsNumber) {
+      if (data.dbsNumber.trim().length < 3) {
+        errors.push("DBS number must be at least 3 characters long");
+      }
+    }
+
+    if (data.dbsExpiryDate !== undefined && data.dbsExpiryDate) {
+      const expiryDate = new Date(data.dbsExpiryDate);
+      if (isNaN(expiryDate.getTime())) {
+        errors.push("DBS expiry date must be a valid date");
+      } else if (expiryDate < new Date()) {
+        errors.push("DBS expiry date cannot be in the past");
+      }
+    }
+
+    if (data.dbsFileUrl !== undefined && data.dbsFileUrl) {
+      // Basic URL validation for DBS file
+      const urlPattern = /^(https?:\/\/)[\w.-]+\.[a-z]{2,}(\S*)$/i;
+      if (!urlPattern.test(data.dbsFileUrl)) {
+        errors.push("DBS file URL must be a valid URL");
       }
     }
 

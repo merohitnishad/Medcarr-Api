@@ -71,7 +71,7 @@ router.get('/profile', healthcareOnly, async (req: AuthenticatedRequest, res: Re
     });
     return;
   }
-});
+}); 
 
 // Create/Complete healthcare profile (first time setup)
 router.post('/profile/complete', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
@@ -710,5 +710,56 @@ router.get('/public/:healthcareProviderId', async (req: AuthenticatedRequest, re
   }
 });
 
+// Generate presigned URL for DBS document upload
+router.post('/dbs/upload-url', healthcareOnly, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { fileName, contentType } = req.body;
+
+    // Validate required fields
+    if (!fileName || !contentType) {
+      res.status(400).json({
+        success: false,
+        error: 'fileName and contentType are required'
+      });
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+
+    if (!allowedTypes.includes(contentType)) {
+      res.status(400).json({
+        success: false,
+        error: 'Only PDF, DOC, and DOCX files are allowed for DBS documents'
+      });
+      return;
+    }
+
+    const uploadResult = await S3Service.generateDbsDocumentUploadUrl(
+      userId,
+      fileName,
+      contentType
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'DBS document upload URL generated successfully',
+      data: uploadResult
+    });
+    return;
+  } catch (error) {
+    console.error('Error generating DBS document upload URL:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate upload URL'
+    });
+    return;
+  }
+});
 
 export default router;

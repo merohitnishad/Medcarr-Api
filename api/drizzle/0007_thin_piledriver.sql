@@ -1,1 +1,0 @@
-ALTER TYPE "relationship" ADD VALUE 'Organization';

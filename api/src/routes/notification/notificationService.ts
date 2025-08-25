@@ -25,7 +25,8 @@ export interface CreateNotificationData {
   scheduledFor?: Date;
   expiresAt?: Date;
   sendEmail?: boolean;
-  messageCount?: number; // For message notifications, to track count of messages
+  messageCount?: number;
+  disputeId?: string; // For message notifications, to track count of messages
 }
 
 export interface NotificationFilters {
@@ -48,9 +49,38 @@ export class NotificationService {
     },
   });
 
+  private static validateEmailConfig() {
+    const config = {
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+      from: process.env.EMAIL_FROM
+    };
+    
+    console.log("Email config:", {
+      host: config.host,
+      port: config.port,
+      user: config.user ? '***' : 'missing',
+      pass: config.pass ? '***' : 'missing',
+      from: config.from
+    });
+    
+    return config.host && config.port && config.user && config.pass;
+  }
+
   // Create a notification
-  static async createNotification(data: CreateNotificationData) {
-    return await db.transaction(async (tx) => {
+  static async createNotification(data: CreateNotificationData, tx?: any) {
+    const dbInstance = tx || db;
+
+    const executeQuery = async (queryFn: any) => {
+      if (tx) {
+        return await queryFn(tx);
+      } else {
+        return await db.transaction(queryFn);
+      }
+    };
+    return await executeQuery(async (transaction: any) => {
       // Use template if type matches
       const template =
         NOTIFICATION_TEMPLATES[data.type.toUpperCase().replace(" ", "_")];
@@ -65,6 +95,7 @@ export class NotificationService {
         jobPostId: data.jobPostId,
         jobApplicationId: data.jobApplicationId,
         relatedUserId: data.relatedUserId,
+        disputeId: data.disputeId,
         metadata: data.metadata,
         actionUrl: data.actionUrl || template?.actionUrl,
         actionLabel: data.actionLabel || template?.actionLabel,
@@ -73,21 +104,30 @@ export class NotificationService {
       };
 
       // Create notification
-      const [notification] = await tx
-        .insert(notifications)
-        .values(notificationData)
-        .returning();
-
+      const [notification] = await transaction
+      .insert(notifications)
+      .values(notificationData)
+      .returning();
+      
       // Send email if requested
-      if (data.sendEmail !== false) {
-        await this.sendEmailNotification(notification.id);
+      if (data.sendEmail !== false && notification.id) {
+        if (!this.validateEmailConfig()) {
+          console.error("Email configuration is incomplete");
+          return notification;
+        }
+        
+        try {
+          await this.sendEmailNotification(notification.id, transaction);
+        } catch (emailError) {
+          console.error("Email sending failed:", emailError);
+        }
       }
 
       // NEW: Emit real-time notification if user is online
       const socketManager = global.socketManager;
       if (socketManager && socketManager.isUserOnline(data.userId)) {
         // Get full notification data with relations for the socket event
-        const fullNotification = await tx.query.notifications.findFirst({
+        const fullNotification = await transaction.query.notifications.findFirst({ // Use transaction instead of tx
           where: eq(notifications.id, notification.id),
           with: {
             relatedUser: {
@@ -101,6 +141,7 @@ export class NotificationService {
             },
           },
         });
+      
 
         if (fullNotification) {
           socketManager.sendNotificationToUser(data.userId, fullNotification);
@@ -122,7 +163,8 @@ export class NotificationService {
     templateKey: string,
     userId: string,
     replacements: Record<string, string> = {},
-    additionalData: Partial<CreateNotificationData> = {}
+    additionalData: Partial<CreateNotificationData> = {},
+    tx?: any // Add this parameter
   ) {
     const template = NOTIFICATION_TEMPLATES[templateKey];
     if (!template) {
@@ -165,7 +207,7 @@ export class NotificationService {
       actionUrl,
       actionLabel: template.actionLabel,
       ...additionalData,
-    });
+    }, tx);
   }
 
   // NEW METHOD - Handle message notification creation/update
@@ -178,17 +220,20 @@ export class NotificationService {
     const conversationId = additionalData.metadata?.conversationId;
     const jobPostId = additionalData.jobPostId;
     const senderId = additionalData.relatedUserId; // The person sending the message
-  
+
     // CHANGE 2: Check if recipient is online and active in conversation
     const socketManager = global.socketManager;
     const isRecipientOnline = socketManager?.isUserOnline(userId);
-    const isRecipientInConversation = socketManager?.isUserInConversation(userId, conversationId);
-  
+    const isRecipientInConversation = socketManager?.isUserInConversation(
+      userId,
+      conversationId
+    );
+
     // CHANGE 3: If user is online and in the conversation, don't create/update notification
     if (isRecipientOnline && isRecipientInConversation) {
       return null; // Don't create notification
     }
-  
+
     // Build where conditions dynamically
     const whereConditions = [
       eq(notifications.userId, userId),
@@ -197,41 +242,41 @@ export class NotificationService {
       eq(notifications.isActive, true),
       eq(notifications.isDeleted, false),
     ];
-  
+
     if (jobPostId) {
       whereConditions.push(eq(notifications.jobPostId, jobPostId));
     }
-  
+
     // Look for existing unread message notification for this conversation
     const existingNotification = await db.query.notifications.findFirst({
       where: and(...whereConditions),
       orderBy: [desc(notifications.createdAt)],
     });
-  
+
     // Check if existing notification matches this conversation
     const existingMetadata = existingNotification?.metadata as any;
     const matchingNotification =
       existingMetadata?.conversationId === conversationId
         ? existingNotification
         : null;
-  
+
     if (matchingNotification) {
       // CHANGE 4: Add time check - don't update if last update was very recent (< 30 seconds)
       const lastUpdated = new Date(matchingNotification.updatedAt).getTime();
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdated;
-      
+
       // If updated within last 30 seconds, don't update again
       if (timeSinceLastUpdate < 30000) {
         return matchingNotification;
       }
-  
+
       // Update existing notification
       const currentMetadata = (matchingNotification.metadata as any) || {};
       const newCount = (matchingNotification.messageCount || 1) + 1;
       const senderName = replacements.senderName || "Someone";
       const messagePreview = replacements.messagePreview || "";
-  
+
       const [updatedNotification] = await db
         .update(notifications)
         .set({
@@ -251,7 +296,7 @@ export class NotificationService {
         })
         .where(eq(notifications.id, matchingNotification.id))
         .returning();
-  
+
       // CHANGE 5: Only send socket update if user is online but NOT in conversation
       if (socketManager && isRecipientOnline && !isRecipientInConversation) {
         const fullNotification = await db.query.notifications.findFirst({
@@ -262,21 +307,21 @@ export class NotificationService {
             jobApplication: { columns: { id: true, status: true } },
           },
         });
-  
+
         if (fullNotification) {
           socketManager.sendNotificationToUser(userId, fullNotification);
           const unreadCount = await this.getUnreadCount(userId);
           socketManager.sendNotificationCountUpdate(userId, unreadCount);
         }
       }
-  
+
       return updatedNotification;
     } else {
       // Create new notification only if user is not actively in conversation
       let title = template.title;
       let message = template.message;
       let actionUrl = template.actionUrl;
-  
+
       Object.entries(replacements).forEach(([key, value]) => {
         const placeholder = `{${key}}`;
         title = title.replace(new RegExp(placeholder, "g"), value);
@@ -285,7 +330,7 @@ export class NotificationService {
           actionUrl = actionUrl.replace(new RegExp(placeholder, "g"), value);
         }
       });
-  
+
       return await this.createNotification({
         userId,
         type: template.type,
@@ -354,6 +399,14 @@ export class NotificationService {
           columns: {
             id: true,
             status: true,
+          },
+        },
+        dispute: {
+          columns: {
+            id: true,
+            disputeNumber: true,
+            status: true,
+            title: true,
           },
         },
       },
@@ -474,46 +527,75 @@ export class NotificationService {
   }
 
   // Send email notification
-  static async sendEmailNotification(notificationId: string) {
+  static async sendEmailNotification(notificationId: string, tx?: any) {
     try {
-      const notification = await db.query.notifications.findFirst({
-        where: eq(notifications.id, notificationId),
-        with: {
-          user: {
-            columns: {
-              email: true,
-              name: true,
+      let notification;
+      
+      if (tx) {
+        // When using transaction, use the transaction's query method
+        notification = await tx.query.notifications.findFirst({
+          where: eq(notifications.id, notificationId),
+          with: {
+            user: {
+              columns: {
+                email: true,
+                name: true,
+              },
             },
           },
-        },
-      });
-
+        });
+      } else {
+        // When not using transaction, use db directly
+        notification = await db.query.notifications.findFirst({
+          where: eq(notifications.id, notificationId),
+          with: {
+            user: {
+              columns: {
+                email: true,
+                name: true,
+              },
+            },
+          },
+        });
+      }
+  
       if (!notification || !notification.user?.email) {
+        console.log("No notification or email found for:", notificationId);
         return false;
       }
-
+    
       const emailHtml = this.generateEmailTemplate(notification);
-
+  
       await this.emailTransporter.sendMail({
         from: process.env.EMAIL_FROM || "noreply@careconnect.com",
         to: notification.user.email,
         subject: notification.title,
         html: emailHtml,
       });
-
-      // Mark email as sent
-      await db
-        .update(notifications)
-        .set({
-          isEmailSent: true,
-          emailSentAt: new Date(),
-        })
-        .where(eq(notifications.id, notificationId));
-
+    
+      // Mark email as sent - use appropriate db instance
+      if (tx) {
+        await tx
+          .update(notifications)
+          .set({
+            isEmailSent: true,
+            emailSentAt: new Date(),
+          })
+          .where(eq(notifications.id, notificationId));
+      } else {
+        await db
+          .update(notifications)
+          .set({
+            isEmailSent: true,
+            emailSentAt: new Date(),
+          })
+          .where(eq(notifications.id, notificationId));
+      }
+  
       return true;
     } catch (error) {
       console.error("Error sending email notification:", error);
-      return false;
+      throw error;
     }
   }
 
@@ -613,5 +695,37 @@ export class NotificationService {
       .returning();
 
     return deletedNotifications.length;
+  }
+
+  static async getDisputeNotifications(
+    disputeId: string,
+    userRole: string,
+    userId?: string
+  ) {
+    const conditions = [
+      eq(notifications.disputeId, disputeId),
+      eq(notifications.isDeleted, false),
+    ];
+
+    // If not admin, only show notifications for the specific user
+    if (userRole !== "admin" && userId) {
+      conditions.push(eq(notifications.userId, userId));
+    }
+
+    return await db.query.notifications.findMany({
+      where: and(...conditions),
+      with: {
+        user: {
+          columns: { id: true, name: true, role: true },
+        },
+        relatedUser: {
+          columns: { id: true, name: true, role: true },
+        },
+        dispute: {
+          columns: { id: true, disputeNumber: true, status: true, title: true },
+        },
+      },
+      orderBy: [desc(notifications.createdAt)],
+    });
   }
 }
