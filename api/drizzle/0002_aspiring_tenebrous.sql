@@ -1,0 +1,1 @@
+ALTER TABLE "healthcare_profiles" ADD COLUMN "dbs_file_key" varchar(500);

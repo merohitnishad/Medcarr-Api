@@ -687,4 +687,173 @@ export class S3Service {
 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }
+
+  /**
+   * Generate presigned URL for DBS document upload
+   */
+  static async generateDbsDocumentUploadUrl(
+    userId: string,
+    fileName: string,
+    contentType: string,
+    expiresIn: number = 3600
+  ): Promise<PresignedUploadResult> {
+    try {
+      // Validate content type for DBS documents
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+
+      if (!allowedTypes.includes(contentType)) {
+        throw new Error(
+          "File type not allowed. Supported: PDF, DOC, DOCX"
+        );
+      }
+
+      const documentKey = this.generateDbsDocumentKey(userId, fileName);
+
+      const command = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: documentKey,
+        ContentType: contentType,
+        ServerSideEncryption: "AES256",
+        CacheControl: "private, max-age=86400", // 1 day cache
+        Metadata: {
+          userId: userId,
+          uploadedAt: new Date().toISOString(),
+          originalFileName: fileName,
+          documentType: "dbs_document",
+        },
+      });
+
+      const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn });
+      const publicUrl = this.getPublicUrl(documentKey);
+
+      return {
+        uploadUrl,
+        imageKey: documentKey,
+        publicUrl,
+      };
+    } catch (error) {
+      console.error(
+        "Error generating presigned URL for DBS document:",
+        error
+      );
+      throw new Error("Failed to generate DBS document upload URL");
+    }
+  }
+
+  /**
+   * Generate DBS document key with organized folder structure
+   */
+  private static generateDbsDocumentKey(
+    userId: string,
+    originalFileName: string
+  ): string {
+    const ext = path.extname(originalFileName).toLowerCase();
+    const timestamp = Date.now();
+    const randomSuffix = crypto.randomBytes(4).toString("hex");
+
+    const fileName = `dbs_document_${timestamp}_${randomSuffix}${ext}`;
+
+    return `healthcare/dbs/${userId}/${fileName}`;
+  }
+
+  /**
+   * Upload DBS document directly (alternative to presigned URL)
+   */
+  static async uploadDbsDocument(
+    file: Buffer | Uint8Array,
+    userId: string,
+    originalFileName: string,
+    contentType: string
+  ): Promise<UploadResult> {
+    try {
+      // Validate file type
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+
+      if (!allowedTypes.includes(contentType)) {
+        throw new Error(
+          "File type not allowed. Supported: PDF, DOC, DOCX"
+        );
+      }
+
+      // Validate file size (max 10MB for DBS documents)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.length > maxSize) {
+        throw new Error("File size exceeds maximum limit of 10MB");
+      }
+
+      const documentKey = this.generateDbsDocumentKey(userId, originalFileName);
+
+      // Prepare upload parameters
+      const uploadParams = {
+        Bucket: BUCKET_NAME,
+        Key: documentKey,
+        Body: file,
+        ContentType: contentType,
+        ServerSideEncryption: "AES256",
+        CacheControl: "private, max-age=86400", // 1 day cache
+        Metadata: {
+          userId: userId,
+          uploadedAt: new Date().toISOString(),
+          originalFileName: originalFileName,
+          documentType: "dbs_document",
+        },
+      };
+
+      // Upload to S3
+      const command = new PutObjectCommand(uploadParams as any);
+      await s3Client.send(command);
+
+      // Return upload result
+      return {
+        key: documentKey,
+        url: this.getPublicUrl(documentKey),
+        fileName: path.basename(documentKey),
+        size: file.length,
+        contentType,
+      };
+    } catch (error) {
+      console.error("Error uploading DBS document to S3:", error);
+      throw new Error(
+        `Failed to upload DBS document: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Validate DBS document file from client side
+   */
+  static validateDbsDocumentFile(file: File): {
+    isValid: boolean;
+    error?: string;
+  } {
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (file.size > maxSize) {
+      return { isValid: false, error: "File size must be less than 10MB" };
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      return {
+        isValid: false,
+        error: "Only PDF, DOC, and DOCX files are allowed",
+      };
+    }
+
+    return { isValid: true };
+  }
 }
