@@ -39,6 +39,9 @@ jobs:
           echo "Branch: ${{ steps.extract_branch.outputs.branch }}"
           echo "Commit: ${{ steps.commit_hash.outputs.commit }}"
 
+      - name: Create .env file from secret
+        run: echo "${{ vars.ENV_FILE }}" > .env
+
       - name: Build the Docker image
         run: |
           IMAGE_TAG=${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_REPOSITORY }}:${{ secrets.APP_NAME }}_${{ steps.extract_branch.outputs.branch }}_${{ steps.commit_hash.outputs.commit }}
@@ -98,7 +101,8 @@ jobs:
 
             echo ${{ secrets.DOCKER_PASSWORD }} | docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin ${{ env.REGISTRY_URL }}
 
-            docker run -d -p 8000:8000 -v /home/$SSH_USERNAME/app/.env:/app/.env --name ${{ secrets.APP_NAME }} --platform linux/amd64 $IMAGE_TAG
+            docker run -d -p 8000:8000 -v /home/$SSH_USERNAME/medcarr_test/backend/.env:/api/.env --name ${{ secrets.APP_NAME }} --platform linux/amd64 $IMAGE_TAG
+            
             docker logout
 
             
