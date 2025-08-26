@@ -9,7 +9,8 @@ set -e
 
 echo "Running database migrations..."
 # This uses the script defined in your package.json
-npx drizzle-kit migrate --config drizzle.config.ts
+npm i drizzle-kit
+npm run db:migrate
 
 echo "Migrations complete."
 

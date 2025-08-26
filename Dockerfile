@@ -35,6 +35,9 @@ RUN npm ci --omit=dev --silent --no-audit --no-fund \
 # Copy built dist and necessary files from builder
 COPY --from=builder /api/dist ./dist
 COPY --from=builder /api/entrypoint.sh ./entrypoint.sh
+# Copy drizzle config and source so runtime can run migrations
+COPY --from=builder /api/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /api/drizzle ./drizzle
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs

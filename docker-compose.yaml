@@ -21,13 +21,13 @@ services:
   # Your API Application
   api:
     build:
-      context: ./api
+      context: .
       dockerfile: Dockerfile
     container_name: node_api
     ports:
       - "8000:8000"
     env_file:
-      - ./api/.env
+      - ./.env
     environment:
       NODE_ENV: dev
       DB_HOST: postgres
