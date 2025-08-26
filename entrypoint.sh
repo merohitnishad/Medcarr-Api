@@ -8,9 +8,9 @@ set -e
 # Drizzle's migrate command will connect to the DB.
 
 echo "Running database migrations..."
-# This uses the script defined in your package.json
-npm i drizzle-kit
-npm run db:migrate
+# Use the locally installed drizzle-kit from node_modules
+export NODE_TLS_REJECT_UNAUTHORIZED=0
+./node_modules/.bin/drizzle-kit migrate --config drizzle.config.ts
 
 echo "Migrations complete."
 

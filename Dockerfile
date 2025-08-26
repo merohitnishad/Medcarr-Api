@@ -56,6 +56,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node healthcheck.js || exit 1
 
+# Copy node_modules from builder that contains drizzle-kit
+COPY --from=builder /api/node_modules ./node_modules
+
 # Set the entrypoint script
 ENTRYPOINT ["/api/entrypoint.sh"]
 
