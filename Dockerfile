@@ -1,10 +1,10 @@
 # Use Node.js 21 Alpine for smaller image size
-FROM node:21-alpine
+FROM node:21-alpine AS builder
 
 # Set working directory
 WORKDIR /api
 
-# Install dependencies for native modules (if needed)
+# Install build dependencies for native modules
 RUN apk add --no-cache python3 make g++
 
 # Copy package files first for better caching
@@ -16,18 +16,30 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build TypeScript
+# Build TypeScript into dist
 RUN npm run build
 
-# Remove dev dependencies after build to reduce image size
-# RUN npm prune --production
+### Final smaller runtime image
+FROM node:21-alpine AS runtime
+
+WORKDIR /api
+
+# Set production environment and install only production dependencies
+ENV NODE_ENV=production
+COPY package*.json ./
+# Use --omit=dev to ensure dev deps aren't installed and clean npm cache to reduce layer size
+RUN npm ci --omit=dev --silent --no-audit --no-fund \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /root/.cache
+
+# Copy built dist and necessary files from builder
+COPY --from=builder /api/dist ./dist
+COPY --from=builder /api/entrypoint.sh ./entrypoint.sh
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
 
-# Copy entrypoint script
-COPY entrypoint.sh /api/entrypoint.sh
 RUN chmod +x /api/entrypoint.sh
 
 # Change ownership of api directory
@@ -44,5 +56,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Set the entrypoint script
 ENTRYPOINT ["/api/entrypoint.sh"]
 
-# Start the application
-CMD ["node", "dist/src/index.js"]
+# Start the application using start script (loads dotenv)
+CMD ["npm", "start"]
